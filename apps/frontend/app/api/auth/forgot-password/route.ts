@@ -1,15 +1,18 @@
-import { NextResponse } from "next/server";
 import { Resend } from "resend";
 import crypto from "crypto";
+import { apiError, apiSuccess } from "@/lib/api-response-server";
 import { prisma } from "@/lib/prisma";
-const resend = new Resend(process.env.RESEND_API_KEY); 
+const responseMessage = "Eğer bu e-posta adresiyle bir hesabınız varsa, şifre sıfırlama bağlantısını içeren bir e-posta gönderdik.";
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 export async function POST(req: Request) {
   const { email } = await req.json();
 
   const user = await prisma.user.findUnique({ where: { email } });
   if (!user) {
-    return NextResponse.json({ message: "Eğer mail kayıtlıysa, sıfırlama linki gönderildi." });
+    return apiSuccess({
+      message: responseMessage,
+    });
   }
 
   const resetToken = crypto.randomBytes(32).toString("hex");
@@ -24,14 +27,14 @@ export async function POST(req: Request) {
 
   try {
     await resend.emails.send({
-      from: 'onboarding@resend.dev', 
+      from: "onboarding@resend.dev",
       to: email,
-      subject: 'Şifre Sıfırlama Talebiniz',
-      html: `<p>Şifrenizi sıfırlamak için tıklayın: <a href="${resetLink}">${resetLink}</a></p>`
+      subject: "Şifre Sıfırlama Talebiniz",
+      html: `<p>Şifrenizi sıfırlamak için tıklayın: <a href="${resetLink}">${resetLink}</a></p>`,
     });
   } catch (error) {
-    return NextResponse.json({ error: "Mail gönderilemedi" }, { status: 500 });
+    return apiError("Mail gönderilemedi", 500);
   }
 
-  return NextResponse.json({ message: "Sıfırlama linki mail adresinize gönderildi." });
+  return apiSuccess({ message: responseMessage });
 }

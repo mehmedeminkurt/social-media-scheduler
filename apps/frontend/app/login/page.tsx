@@ -23,7 +23,7 @@ export default function LoginPage() {
     });
 
     if (res?.error) {
-      setError("Email veya şifre hatalı!");
+      setError(res.error === "CredentialsSignin" ? "Email veya şifre hatalı!" : res.error);
       setMessage("");
     } else {
       setMessage("Giriş başarılı! Yönlendiriliyorsunuz...");

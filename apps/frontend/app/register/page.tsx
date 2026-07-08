@@ -1,6 +1,9 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { isApiSuccess, type ApiResponse } from "@/lib/api-response";
+
+type RegisterResponse = ApiResponse<{ message: string }>;
 
 export default function RegisterPage() {
   const [email, setEmail] = useState("");
@@ -16,17 +19,18 @@ export default function RegisterPage() {
 
     const res = await fetch("/api/register", {
       method: "POST",
-      headers: { "Content-Type": "application/json" }, // Header eklendi
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email, password }),
     });
 
-    if (res.ok) {
+    const data = (await res.json()) as RegisterResponse;
+
+    if (isApiSuccess(data)) {
       setMessage("Kayıt başarılı! Giriş sayfasına yönlendiriliyorsunuz...");
-      setTimeout(() => router.push("/login"), 2000); // 2 saniye bekletip yönlendiriyoruz
+      setTimeout(() => router.push("/login"), 2000);
     } else {
-      const data = await res.json();
-      setError(data.message || "Kayıt sırasında bir hata oluştu.");
-      setMessage(""); // Hata varsa mesajı temizle
+      setError(data.error || "Kayıt sırasında bir hata oluştu.");
+      setMessage("");
     }
   };
 
