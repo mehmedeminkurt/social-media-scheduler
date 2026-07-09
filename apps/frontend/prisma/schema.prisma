@@ -7,10 +7,84 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum MembershipRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+enum PostStatus {
+  DRAFT
+  SCHEDULED
+  PUBLISHED
+  FAILED
+}
+
+model Company {
+  id        String   @id @default(uuid())
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  members        Membership[]
+  socialAccounts SocialAccount[]
+  posts          Post[]
+}
+
 model User {
   id            String    @id @default(uuid())
   email         String    @unique
   password      String
-  resetToken    String?   @unique // Şifre sıfırlama tokenı
-  resetTokenExp DateTime? // Tokenın geçerlilik süresi
+  resetToken    String?   @unique
+  resetTokenExp DateTime?
+  createdAt     DateTime  @default(now())
+
+  memberships Membership[]
+  posts       Post[]
+}
+
+model Membership {
+  id        String         @id @default(uuid())
+  userId    String
+  companyId String
+  role      MembershipRole @default(MEMBER)
+  createdAt DateTime       @default(now())
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, companyId])
+  @@index([companyId])
+}
+
+model SocialAccount {
+  id          String   @id @default(uuid())
+  companyId   String
+  platform    String
+  credentials Json
+  createdAt   DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, platform])
+  @@index([companyId])
+}
+
+model Post {
+  id          String     @id @default(uuid())
+  companyId   String
+  authorId    String
+  caption     String
+  mediaUrls   String[]
+  scheduledAt DateTime?
+  status      PostStatus @default(DRAFT)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  author  User    @relation(fields: [authorId], references: [id])
+
+  @@index([companyId, status])
+  @@index([companyId, scheduledAt])
 }
