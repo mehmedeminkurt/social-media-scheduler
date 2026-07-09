@@ -33,6 +33,7 @@ export async function POST(req: Request) {
       html: `<p>Şifrenizi sıfırlamak için tıklayın: <a href="${resetLink}">${resetLink}</a></p>`,
     });
   } catch (error) {
+    console.error("Mail gönderim hatası:", error);
     return apiError("Mail gönderilemedi", 500);
   }
 
