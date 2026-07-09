@@ -19,11 +19,9 @@ export async function POST(req: Request) {
     const hashedPassword = await bcrypt.hash(password, 10);
 
     const user = await prisma.user.create({
-      data: {
-        email: email,
-        password: hashedPassword,
-      },
-    });
+      data: { email, password: hashedPassword },
+      select: { id: true, email: true }
+}   );
 
     return apiSuccess({ message: "Kayıt başarılı", user });
   } catch (error: unknown) {
