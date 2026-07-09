@@ -2,6 +2,10 @@
 
 A monorepo for scheduling and posting content to social media platforms.
 
+## Prerequisites
+- Node.js: `>= 18.0.0`
+- npm: `>= 10.0.0`
+
 ## Getting Started
 
 
