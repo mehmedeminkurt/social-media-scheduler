@@ -1,13 +1,20 @@
 import bcrypt from "bcrypt";
 import { Prisma } from "@prisma/client";
+import { credentialsSchema } from "@/lib/auth-schemas";
 import { apiError, apiSuccess } from "@/lib/api-response-server";
 import { prisma } from "@/lib/prisma";
+import { validateBody } from "@/lib/validate-request";
 
 export async function POST(req: Request) {
   try {
     const body = await req.json();
+    const validation = validateBody(credentialsSchema, body);
 
-    const { email, password } = body;
+    if (!validation.ok) {
+      return validation.response;
+    }
+
+    const { email, password } = validation.data;
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
