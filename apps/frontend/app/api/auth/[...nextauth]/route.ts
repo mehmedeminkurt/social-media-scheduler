@@ -5,12 +5,13 @@ import { credentialsSchema, invalidInputMessage } from "@/lib/auth-schemas";
 import { prisma } from "@/lib/prisma";
 
 const handler = NextAuth({
+  session: { strategy: "jwt" },
   providers: [
     CredentialsProvider({
       name: "Credentials",
       credentials: {
         email: { label: "Email", type: "email" },
-        password: { label: "Password", type: "password" }
+        password: { label: "Password", type: "password" },
       },
       async authorize(credentials) {
         const parsed = credentialsSchema.safeParse({
@@ -34,14 +35,44 @@ const handler = NextAuth({
 
         if (!isPasswordValid) return null;
 
-        return { id: user.id, email: user.email };
-      }
-    })
+        // Aktif şirket = kullanıcının en eski üyeliği (ilk kurduğu firma).
+        // İleride firma değiştirme (switch) bunun üzerine kurulacak.
+        const membership = await prisma.membership.findFirst({
+          where: { userId: user.id },
+          orderBy: { createdAt: "asc" },
+        });
+
+        return {
+          id: user.id,
+          email: user.email,
+          activeCompanyId: membership?.companyId ?? null,
+          role: membership?.role ?? null,
+        };
+      },
+    }),
   ],
+  callbacks: {
+    // Giriş anında (user dolu) tenant bilgisini token'a yaz.
+    async jwt({ token, user }) {
+      if (user) {
+        token.id = user.id;
+        token.activeCompanyId = user.activeCompanyId;
+        token.role = user.role;
+      }
+      return token;
+    },
+    // Token'daki tenant bilgisini istemciye açılan session'a taşı.
+    async session({ session, token }) {
+      session.user.id = token.id;
+      session.user.activeCompanyId = token.activeCompanyId;
+      session.user.role = token.role;
+      return session;
+    },
+  },
   pages: {
     signIn: "/login",
   },
-  secret: process.env.NEXTAUTH_SECRET, 
+  secret: process.env.NEXTAUTH_SECRET,
 });
 
 export { handler as GET, handler as POST };
