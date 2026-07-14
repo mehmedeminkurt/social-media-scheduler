@@ -1,32 +1,61 @@
 import bcrypt from "bcrypt";
-import { Prisma } from "@prisma/client";
-import { credentialsSchema } from "@/lib/auth-schemas";
+import { Prisma, MembershipRole } from "@prisma/client";
+import { registerSchema } from "@/lib/auth-schemas";
 import { apiError, apiSuccess } from "@/lib/api-response-server";
 import { prisma } from "@/lib/prisma";
 import { validateBody } from "@/lib/validate-request";
+import { slugify } from "@/lib/slug";
 
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const validation = validateBody(credentialsSchema, body);
+    const validation = validateBody(registerSchema, body);
 
     if (!validation.ok) {
       return validation.response;
     }
 
-    const { email, password } = validation.data;
-
+    const { email, password, companyName } = validation.data;
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    const user = await prisma.user.create({
-      data: { email, password: hashedPassword },
-      select: { id: true, email: true }
-}   );
+    // Tek işlem (transaction): User + Company + Membership(OWNER) birlikte oluşur.
+    // Herhangi biri başarısız olursa tamamı geri alınır — yarım kayıt kalmaz.
+    const result = await prisma.$transaction(async (tx) => {
+      const user = await tx.user.create({
+        data: { email, password: hashedPassword },
+        select: { id: true, email: true },
+      });
 
-    return apiSuccess({ message: "Kayıt başarılı", user });
+      // Slug'ı transaction içinde benzersizleştir (base, base-1, base-2, ...).
+      const base = slugify(companyName);
+      let slug = base;
+      let suffix = 1;
+      while (await tx.company.findUnique({ where: { slug } })) {
+        slug = `${base}-${suffix}`;
+        suffix += 1;
+      }
+
+      const company = await tx.company.create({
+        data: { name: companyName, slug },
+        select: { id: true, name: true, slug: true },
+      });
+
+      await tx.membership.create({
+        data: {
+          userId: user.id,
+          companyId: company.id,
+          role: MembershipRole.OWNER,
+        },
+      });
+
+      return { user, company };
+    });
+
+    return apiSuccess({ message: "Kayıt başarılı", ...result }, 201);
   } catch (error: unknown) {
     console.error("!!! KAYIT HATASI !!!", error);
 
+    // E-posta benzersizlik çakışması (slug zaten transaction içinde çözülüyor).
     if (
       error instanceof Prisma.PrismaClientKnownRequestError &&
       error.code === "P2002"
