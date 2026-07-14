@@ -53,16 +53,22 @@ export async function POST(req: Request) {
 
     return apiSuccess({ message: "Kayıt başarılı", ...result }, 201);
   } catch (error: unknown) {
-    console.error("!!! KAYIT HATASI !!!", error);
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      
+      console.error("!!! KAYIT HATASI !!!", error.code, error.meta);
 
-    // E-posta benzersizlik çakışması (slug zaten transaction içinde çözülüyor).
-    if (
-      error instanceof Prisma.PrismaClientKnownRequestError &&
-      error.code === "P2002"
-    ) {
-      return apiError("Bu e-posta zaten kayıtlı.", 409);
+      const target = error.meta?.target as string[] | undefined;
+
+      if (target?.includes("email")) {
+        return apiError("Bu e-posta zaten kayıtlı.", 409);
+      }
+      
+      if (target?.includes("slug")) {
+        return apiError("Bu firma adı zaten kullanımda.", 409);
+      }
     }
 
+    console.error("!!! BEKLENMEYEN HATA !!!", error);
     return apiError("Kayıt sırasında bir hata oluştu.", 500);
   }
-}
+  }
