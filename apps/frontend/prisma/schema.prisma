@@ -16,6 +16,7 @@ enum MembershipRole {
 enum PostStatus {
   DRAFT
   SCHEDULED
+  PUBLISHING
   PUBLISHED
   FAILED
 }
@@ -30,6 +31,7 @@ model Company {
   members        Membership[]
   socialAccounts SocialAccount[]
   posts          Post[]
+  brandKits      BrandKit[]
 }
 
 model User {
@@ -59,32 +61,96 @@ model Membership {
 }
 
 model SocialAccount {
-  id          String   @id @default(uuid())
-  companyId   String
-  platform    String
-  credentials Json
-  createdAt   DateTime @default(now())
+  id                    String    @id @default(uuid())
+  companyId             String
+  platform              String
+  accessTokenEncrypted  String
+  refreshTokenEncrypted String?
+  externalId            String
+  tokenExpiresAt        DateTime?
+  createdAt             DateTime  @default(now())
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
-  @@unique([companyId, platform])
+  @@unique([companyId, platform, externalId])
   @@index([companyId])
 }
 
 model Post {
-  id          String     @id @default(uuid())
+  id          String       @id @default(uuid())
   companyId   String
   authorId    String
   caption     String
-  mediaUrls   String[]
   scheduledAt DateTime?
-  status      PostStatus @default(DRAFT)
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
+  status      PostStatus   @default(DRAFT)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
 
-  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  author  User    @relation(fields: [authorId], references: [id])
+  company     Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  author      User         @relation(fields: [authorId], references: [id])
+  targets     PostTarget[]
+  mediaAssets MediaAsset[]
+  logs        PostLog[]
 
   @@index([companyId, status])
   @@index([companyId, scheduledAt])
+}
+
+model PostTarget {
+  id             String     @id @default(uuid())
+  postId         String
+  platform       String
+  status         PostStatus @default(DRAFT)
+  externalPostId String?
+  error          String?
+  attempts       Int        @default(0)
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  post           Post       @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, platform])
+  @@index([postId])
+}
+
+model MediaAsset {
+  id          String   @id @default(uuid())
+  postId      String
+  type        String
+  originalUrl String
+  renderedUrl String?
+  order       Int
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  post        Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@index([postId])
+}
+
+model PostLog {
+  id        String   @id @default(uuid())
+  postId    String
+  ts        DateTime @default(now())
+  level     String
+  message   String
+
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@index([postId])
+}
+
+model BrandKit {
+  id            String   @id @default(uuid())
+  companyId     String
+  name          String
+  logoUrl       String?
+  colors        Json
+  overlayConfig Json?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  company       Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
 }
