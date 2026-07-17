@@ -236,6 +236,32 @@ function SettingsContent() {
     }
   };
 
+  const handleDisconnect = async (platform: "instagram" | "linkedin") => {
+    try {
+      const res = await fetch(`/api/social/${platform}/disconnect`, {
+        method: "POST",
+      });
+      const json = await res.json();
+      if (json.success) {
+        setConnectedAccounts((prev) => prev.filter((a) => a.platform !== platform));
+        setNotification({
+          type: "success",
+          message: `${platform === "instagram" ? "Instagram" : "LinkedIn"} hesabı bağlantısı başarıyla kesildi.`,
+        });
+      } else {
+        setNotification({
+          type: "error",
+          message: json.error || "Bağlantı kesilirken bir hata oluştu.",
+        });
+      }
+    } catch {
+      setNotification({
+        type: "error",
+        message: "Sunucuyla iletişim kurulurken bir hata oluştu.",
+      });
+    }
+  };
+
   const getConnectedAccount = (platform: string) =>
     connectedAccounts.find((a) => a.platform === platform);
 
@@ -387,6 +413,7 @@ function SettingsContent() {
             connectedAccount={getConnectedAccount("instagram")}
             redirectUri={`${origin}/api/social/instagram/callback`}
             onSave={() => handleSave("instagram")}
+            onDisconnect={() => handleDisconnect("instagram")}
           />
 
           {/* ── LinkedIn Kartı ── */}
@@ -412,6 +439,7 @@ function SettingsContent() {
             connectedAccount={getConnectedAccount("linkedin")}
             redirectUri={`${origin}/api/social/linkedin/callback`}
             onSave={() => handleSave("linkedin")}
+            onDisconnect={() => handleDisconnect("linkedin")}
           />
         </div>
       </main>
@@ -431,6 +459,7 @@ interface PlatformCardProps {
   connectedAccount: ConnectedAccount | undefined;
   redirectUri: string;
   onSave: () => void;
+  onDisconnect: () => void;
 }
 
 function PlatformCard({
@@ -443,8 +472,44 @@ function PlatformCard({
   connectedAccount,
   redirectUri,
   onSave,
+  onDisconnect,
 }: PlatformCardProps) {
   const isConnected = !!connectedAccount;
+
+  const [isTesting, setIsTesting] = useState(false);
+  const [testResult, setTestResult] = useState<"idle" | "success" | "error">("idle");
+  const [testErrorMessage, setTestErrorMessage] = useState("");
+
+  // Hesap bağlantı durumu değiştiğinde test sonucunu sıfırla
+  useEffect(() => {
+    setTestResult("idle");
+    setTestErrorMessage("");
+  }, [isConnected]);
+
+  const handleTest = async () => {
+    setIsTesting(true);
+    setTestResult("idle");
+    setTestErrorMessage("");
+
+    try {
+      const res = await fetch(`/api/social/${platform}/test`, {
+        method: "POST",
+      });
+      const json = await res.json();
+
+      if (json.success) {
+        setTestResult("success");
+      } else {
+        setTestResult("error");
+        setTestErrorMessage(json.error || "Bağlantı doğrulaması başarısız oldu.");
+      }
+    } catch {
+      setTestResult("error");
+      setTestErrorMessage("Doğrulama isteği sırasında bağlantı hatası oluştu.");
+    } finally {
+      setIsTesting(false);
+    }
+  };
 
   return (
     <section className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden shadow-xl hover:border-zinc-700/80 transition duration-300">
@@ -561,15 +626,6 @@ function PlatformCard({
           </div>
         </div>
 
-        {/* Redirect URI */}
-        <div className="bg-zinc-950/60 border border-zinc-800/40 rounded-lg p-3.5 space-y-1">
-          <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest block">
-            Redirect URI (Developer Console&apos;a girin)
-          </span>
-          <code className="text-xs font-mono text-zinc-300 block select-all break-all">
-            {redirectUri}
-          </code>
-        </div>
 
         {/* Kaydetme Hatası */}
         {config.errorMessage && (
@@ -617,11 +673,11 @@ function PlatformCard({
 
         {/* ── Hesap Bağlama Bölümü ── */}
         <div className="pt-4 border-t border-zinc-800/60">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div className="flex items-center gap-2.5">
               {isConnected ? (
                 <>
-                  <span className="flex h-2 w-2 rounded-full bg-emerald-400 shadow-sm shadow-emerald-400/50" />
+                  <span className="flex h-2 w-2 rounded-full bg-emerald-400 shadow-sm shadow-emerald-400/50 animate-pulse" />
                   <div>
                     <p className="text-xs font-semibold text-zinc-200">
                       Hesap Bağlı
@@ -639,39 +695,163 @@ function PlatformCard({
               )}
             </div>
 
-            <a
-              href={`/api/social/${platform}/connect`}
-              className={`text-xs font-semibold px-3.5 py-1.5 rounded-lg border transition duration-150 flex items-center gap-1.5 ${
-                config.hasSecret
-                  ? isConnected
-                    ? "border-zinc-700 text-zinc-300 hover:bg-zinc-800 hover:border-zinc-600"
-                    : "border-indigo-500/50 text-indigo-400 hover:bg-indigo-500/10"
-                  : "border-zinc-800 text-zinc-600 cursor-not-allowed pointer-events-none"
-              }`}
-              title={
-                !config.hasSecret
-                  ? "Önce App ID ve Secret girerek kaydedin"
-                  : undefined
-              }
-            >
-              <svg
-                width="13"
-                height="13"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
+            <div className="flex items-center flex-wrap gap-2">
+              {isConnected && (
+                <>
+                  <button
+                    type="button"
+                    onClick={handleTest}
+                    disabled={isTesting}
+                    className="text-xs font-semibold px-3 py-1.5 rounded-lg border border-zinc-800 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/40 hover:border-zinc-700 disabled:opacity-50 transition duration-150 flex items-center gap-1.5 cursor-pointer"
+                  >
+                    {isTesting ? (
+                      <div className="w-3.5 h-3.5 border-2 border-zinc-400 border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                      <svg
+                        width="13"
+                        height="13"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth="2"
+                          d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                        />
+                      </svg>
+                    )}
+                    {isTesting ? "Test Ediliyor..." : "Bağlantıyı Test Et"}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={onDisconnect}
+                    className="text-xs font-semibold px-3 py-1.5 rounded-lg border border-red-950/30 bg-red-950/10 text-red-400 hover:bg-red-950/20 hover:border-red-900/50 transition duration-150 flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <svg
+                      width="13"
+                      height="13"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth="2"
+                        d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                      />
+                    </svg>
+                    Bağlantıyı Kes
+                  </button>
+                </>
+              )}
+
+              <a
+                href={`/api/social/${platform}/connect`}
+                className={`text-xs font-semibold px-3.5 py-1.5 rounded-lg border transition duration-150 flex items-center gap-1.5 ${
+                  config.hasSecret
+                    ? isConnected
+                      ? "border-zinc-700 text-zinc-300 hover:bg-zinc-800 hover:border-zinc-600"
+                      : "border-indigo-500/50 text-indigo-400 hover:bg-indigo-500/10"
+                    : "border-zinc-800 text-zinc-600 cursor-not-allowed pointer-events-none"
+                }`}
+                title={
+                  !config.hasSecret
+                    ? "Önce App ID ve Secret girerek kaydedin"
+                    : undefined
+                }
               >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth="2"
-                  d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"
-                />
-              </svg>
-              {isConnected ? "Yeniden Bağla" : "Hesabı Bağla"}
-            </a>
+                <svg
+                  width="13"
+                  height="13"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth="2"
+                    d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"
+                  />
+                </svg>
+                {isConnected ? "Yeniden Bağla" : "Hesabı Bağla"}
+              </a>
+            </div>
           </div>
         </div>
+
+        {/* Test Sonucu Bildirimi */}
+        {testResult !== "idle" && (
+          <div
+            className={`p-3 rounded-lg border text-xs flex items-start gap-2.5 transition-all duration-200 ${
+              testResult === "success"
+                ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-300"
+                : "bg-red-500/10 border-red-500/20 text-red-300"
+            }`}
+          >
+            {testResult === "success" ? (
+              <>
+                <svg
+                  width="16"
+                  height="16"
+                  className="w-4 h-4 shrink-0 text-emerald-400 mt-0.5"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth="2"
+                    d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                  />
+                </svg>
+                <div>
+                  <p className="font-semibold">Bağlantı Aktif & Geçerli</p>
+                  <p className="text-[11px] opacity-80 mt-0.5">
+                    Platform API yetkilendirmesi doğrulanmıştır. Erişim belirteci geçerlidir.
+                  </p>
+                </div>
+              </>
+            ) : (
+              <>
+                <svg
+                  width="16"
+                  height="16"
+                  className="w-4 h-4 shrink-0 text-red-400 mt-0.5"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth="2"
+                    d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"
+                  />
+                </svg>
+                <div>
+                  <p className="font-semibold">Bağlantı Geçersiz</p>
+                  <p className="text-[11px] opacity-80 mt-0.5 leading-relaxed">
+                    {testErrorMessage}
+                  </p>
+                </div>
+              </>
+            )}
+            <button
+              onClick={() => setTestResult("idle")}
+              className="ml-auto opacity-50 hover:opacity-100 transition shrink-0"
+            >
+              <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        )}
       </div>
     </section>
   );
