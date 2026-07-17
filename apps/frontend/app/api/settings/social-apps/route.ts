@@ -88,6 +88,15 @@ export async function POST(req: Request) {
     });
 
     let clientSecretEncrypted = existing?.clientSecretEncrypted;
+    let hasChanged = false;
+
+    if (existing) {
+      const isClientIdChanged = existing.clientId !== clientId;
+      const isClientSecretChanged = !!(clientSecret && clientSecret !== MASK_STRING);
+      if (isClientIdChanged || isClientSecretChanged) {
+        hasChanged = true;
+      }
+    }
 
     // Yeni secret girilmişse veya değiştirilmişse şifrele
     if (clientSecret && clientSecret !== MASK_STRING) {
@@ -95,6 +104,16 @@ export async function POST(req: Request) {
     } else if (!clientSecretEncrypted) {
       // Eğer eski secret yoksa ve yenisi de girilmemişse hata ver
       return apiError("İstemci sırrı (Client Secret) gereklidir.", 400);
+    }
+
+    // Yapılandırma değiştiyse ilişkili eski bağlantıları temizle
+    if (hasChanged) {
+      await prisma.socialAccount.deleteMany({
+        where: {
+          companyId,
+          platform,
+        },
+      });
     }
 
     const updatedConfig = await prisma.socialAppConfig.upsert({
