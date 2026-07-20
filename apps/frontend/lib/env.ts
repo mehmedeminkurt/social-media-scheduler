@@ -13,12 +13,14 @@ const serverEnvSchema = z.object({
       1,
       "NEXTAUTH_SECRET is required. Generate one with: openssl rand -base64 32",
     ),
-  ENCRYPTION_KEY: z
-    .string()
-    .min(
-      1,
-      "ENCRYPTION_KEY is required. Generate a base64 key.",
-    ),
+  ENCRYPTION_KEY: z.string().min(1, "ENCRYPTION_KEY is required. Generate a base64 key.").refine((val) => {
+  try {
+    const buffer = Buffer.from(val, "base64");
+    return buffer.length === 32;
+  } catch {
+    return false;
+  }
+}, "ENCRYPTION_KEY must be a valid base64-encoded 32-byte key. Generate one using: openssl rand -base64 32"),
 });
 
 function validateServerEnv() {
