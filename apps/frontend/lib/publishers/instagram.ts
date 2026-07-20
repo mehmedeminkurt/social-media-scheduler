@@ -203,6 +203,10 @@ export const instagramPublisher: Publisher = {
 
     const [item] = media;
 
+    if (!item) {
+      throw new PublisherValidationError("Yayınlamak için en az bir medya gereklidir.");
+    }
+
     if (item.type === "image") {
       return publishSingleImage(context);
     }

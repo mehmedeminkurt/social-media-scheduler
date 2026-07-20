@@ -33,6 +33,14 @@ export async function POST(
 
     await requirePostForCompany(userId, companyId, postId);
 
+    const existingCount = await prisma.mediaAsset.count({
+      where: { postId },
+    });
+
+    if (existingCount >= 10) {
+      return apiError("Bir gönderiye en fazla 10 adet medya eklenebilir.", 400);
+    }
+
     const formData = await req.formData();
     const file = formData.get("file");
 
@@ -75,10 +83,6 @@ export async function POST(
       resolvedType.extension,
       resolvedType.contentType,
     );
-
-    const existingCount = await prisma.mediaAsset.count({
-      where: { postId },
-    });
 
     const mediaAsset = await prisma.mediaAsset.create({
       data: {
