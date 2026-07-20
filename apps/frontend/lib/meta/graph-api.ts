@@ -1,0 +1,5 @@
+export const META_GRAPH_API_VERSION = "v25.0";
+
+export const META_GRAPH_API_BASE = `https://graph.facebook.com/${META_GRAPH_API_VERSION}`;
+
+export const META_OAUTH_DIALOG_URL = `https://www.facebook.com/${META_GRAPH_API_VERSION}/dialog/oauth`;

@@ -79,3 +79,49 @@ export async function POST(req: Request) {
     return apiError("Gönderi oluşturulurken bir hata oluştu.", 500);
   }
 }
+
+export async function GET(req: Request) {
+  try {
+    const session = await getServerSession(authOptions);
+
+    if (!session?.user?.id) {
+      return apiError("Yetkisiz erişim. Lütfen giriş yapın.", 401);
+    }
+
+    const userId = session.user.id;
+    const companyId = session.user.activeCompanyId;
+
+    if (!companyId) {
+      return apiError("Aktif şirket bulunamadı.", 400);
+    }
+
+    await requireCompanyAccess(userId, companyId);
+
+    const posts = await prisma.post.findMany({
+      where: { companyId },
+      include: {
+        mediaAssets: {
+          select: { id: true },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    const postsWithMediaCount = posts.map((post) => ({
+      id: post.id,
+      caption: post.caption,
+      status: post.status,
+      createdAt: post.createdAt,
+      mediaCount: post.mediaAssets.length,
+    }));
+
+    return apiSuccess(postsWithMediaCount);
+  } catch (error: unknown) {
+    if (error instanceof TenantAccessError) {
+      return apiError(error.message, 403);
+    }
+    console.error("GET /api/posts error:", error);
+    return apiError("Gönderiler listelenirken bir hata oluştu.", 500);
+  }
+}
+

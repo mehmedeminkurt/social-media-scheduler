@@ -1,15 +1,9 @@
-import type { MediaAsset, Post, PostTarget, SocialAccount } from "@prisma/client";
+import type { PostTarget, SocialAccount } from "@prisma/client";
 import { PostStatus } from "@prisma/client";
 
-import { decrypt } from "@/lib/crypto";
 import { getPublisher } from "@/lib/publishers";
 import { PublisherError } from "@/lib/publishers/errors";
-import type {
-  MediaType,
-  PublishContext,
-  PublishResult,
-  Publisher,
-} from "@/lib/publishers/publisher";
+import type { PostWithMedia, PublishResult, Publisher } from "@/lib/publishers/publisher";
 import { prisma } from "@/lib/prisma";
 
 const REELS_POLL_INTERVAL_MS = 3000;
@@ -27,36 +21,10 @@ export type PostPublishResult = {
   targets: TargetPublishOutcome[];
 };
 
-function mapMediaType(type: string): MediaType {
-  return type === "video" ? "video" : "image";
-}
-
-function buildPublishContext(
-  post: Post,
-  mediaAssets: MediaAsset[],
-  account: SocialAccount,
-  accessToken: string,
-): PublishContext {
-  return {
-    companyId: post.companyId,
-    caption: post.caption,
-    media: [...mediaAssets]
-      .sort((a, b) => a.order - b.order)
-      .map((asset) => ({
-        url: asset.renderedUrl ?? asset.originalUrl,
-        type: mapMediaType(asset.type),
-        order: asset.order,
-      })),
-    accessToken,
-    externalAccountId: account.externalId,
-  };
-}
-
 async function pollUntilPublished(
   publisher: Publisher,
   containerId: string,
-  accessToken: string,
-  externalAccountId: string,
+  account: SocialAccount,
 ): Promise<PublishResult> {
   if (!publisher.pollPublishStatus) {
     return {
@@ -66,11 +34,7 @@ async function pollUntilPublished(
   }
 
   for (let attempt = 0; attempt < REELS_MAX_POLL_ATTEMPTS; attempt++) {
-    const result = await publisher.pollPublishStatus(
-      containerId,
-      accessToken,
-      externalAccountId,
-    );
+    const result = await publisher.pollPublishStatus(containerId, account);
 
     if (result.outcome !== "pending") {
       return result;
@@ -87,19 +51,16 @@ async function pollUntilPublished(
 }
 
 async function publishToTarget(
-  post: Post,
+  post: PostWithMedia,
   target: PostTarget,
-  mediaAssets: MediaAsset[],
   account: SocialAccount,
 ): Promise<TargetPublishOutcome> {
   const publisher = getPublisher(target.platform);
-  const accessToken = decrypt(account.accessTokenEncrypted);
-  const context = buildPublishContext(post, mediaAssets, account, accessToken);
 
   let result: PublishResult;
 
   try {
-    result = await publisher.publish(context);
+    result = await publisher.publish(post, target, account);
   } catch (error) {
     const message =
       error instanceof PublisherError
@@ -114,12 +75,7 @@ async function publishToTarget(
   }
 
   if (result.outcome === "pending" && result.containerId) {
-    result = await pollUntilPublished(
-      publisher,
-      result.containerId,
-      accessToken,
-      account.externalId,
-    );
+    result = await pollUntilPublished(publisher, result.containerId, account);
   }
 
   if (result.outcome === "published") {
@@ -203,7 +159,7 @@ export async function publishPostToTargets(postId: string): Promise<PostPublishR
       continue;
     }
 
-    const outcome = await publishToTarget(post, target, post.mediaAssets, account);
+    const outcome = await publishToTarget(post, target, account);
 
     await prisma.postTarget.update({
       where: { id: target.id },

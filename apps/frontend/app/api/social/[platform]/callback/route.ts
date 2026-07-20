@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth/next";
 
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { decrypt, encrypt } from "@/lib/crypto";
+import { META_GRAPH_API_BASE } from "@/lib/meta/graph-api";
 import { prisma } from "@/lib/prisma";
 import { requireCompanyAccess, TenantAccessError } from "@/lib/tenant";
 
@@ -30,7 +31,7 @@ async function handleInstagramCallback(
 
   // 1. Kısa ömürlü user token al (code → short-lived token)
   const shortRes = await fetch(
-    "https://graph.facebook.com/v19.0/oauth/access_token",
+    `${META_GRAPH_API_BASE}/oauth/access_token`,
     {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -49,7 +50,7 @@ async function handleInstagramCallback(
 
   // 2. Uzun ömürlü user token al (60 gün)
   const llRes = await fetch(
-    `https://graph.facebook.com/v19.0/oauth/access_token?` +
+    `${META_GRAPH_API_BASE}/oauth/access_token?` +
     new URLSearchParams({
       grant_type: "fb_exchange_token",
       client_id: clientId,
@@ -65,7 +66,7 @@ async function handleInstagramCallback(
 
   // 3. Kullanıcının Facebook Sayfalarını ve bağlı Instagram hesabını çek
   const pagesRes = await fetch(
-    `https://graph.facebook.com/v19.0/me/accounts?` +
+    `${META_GRAPH_API_BASE}/me/accounts?` +
     new URLSearchParams({
       fields: "id,name,access_token,instagram_business_account{id,name}",
       access_token: longLivedUserToken,

@@ -6,6 +6,7 @@ import { apiError, apiSuccess } from "@/lib/api-response-server";
 import { PostNotFoundError, requirePostForCompany } from "@/lib/posts/access";
 import { ImageValidationError, validateInstagramImage } from "@/lib/posts/image-validation";
 import { resolveUploadType } from "@/lib/posts/media-types";
+import { validateInstagramReelsVideo, VideoValidationError } from "@/lib/posts/video-validation";
 import { prisma } from "@/lib/prisma";
 import { uploadMedia } from "@/lib/storage/media";
 import { TenantAccessError } from "@/lib/tenant";
@@ -33,9 +34,13 @@ export async function POST(
 
     await requirePostForCompany(userId, companyId, postId);
 
-    const existingCount = await prisma.mediaAsset.count({
+    const existingAssets = await prisma.mediaAsset.findMany({
       where: { postId },
+      select: { type: true },
+      orderBy: { order: "asc" },
     });
+
+    const existingCount = existingAssets.length;
 
     if (existingCount >= 10) {
       return apiError("Bir gönderiye en fazla 10 adet medya eklenebilir.", 400);
@@ -64,6 +69,16 @@ export async function POST(
       );
     }
 
+    if (existingCount > 0) {
+      const existingType = existingAssets[0]?.type;
+      if (existingType && existingType !== resolvedType.mediaType) {
+        return apiError(
+          "Görsel ve video aynı gönderide birlikte kullanılamaz.",
+          400,
+        );
+      }
+    }
+
     const buffer = Buffer.from(await file.arrayBuffer());
 
     if (resolvedType.mediaType === "image") {
@@ -71,6 +86,15 @@ export async function POST(
         await validateInstagramImage(buffer);
       } catch (error) {
         if (error instanceof ImageValidationError) {
+          return apiError(error.message, 400);
+        }
+        throw error;
+      }
+    } else {
+      try {
+        validateInstagramReelsVideo(buffer);
+      } catch (error) {
+        if (error instanceof VideoValidationError) {
           return apiError(error.message, 400);
         }
         throw error;

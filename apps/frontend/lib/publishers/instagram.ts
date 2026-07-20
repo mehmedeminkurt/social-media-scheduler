@@ -1,15 +1,16 @@
+import type { MediaAsset, SocialAccount } from "@prisma/client";
+
+import { decrypt } from "@/lib/crypto";
+import { META_GRAPH_API_BASE } from "@/lib/meta/graph-api";
 import {
   PublisherApiError,
   PublisherValidationError,
 } from "@/lib/publishers/errors";
 import type {
-  PublishContext,
+  PostWithMedia,
   Publisher,
   PublishResult,
 } from "@/lib/publishers/publisher";
-
-const GRAPH_API_VERSION = "v25.0";
-const GRAPH_API_BASE = `https://graph.facebook.com/${GRAPH_API_VERSION}`;
 
 interface MetaGraphErrorBody {
   error?: {
@@ -31,6 +32,12 @@ interface MediaPublishResponse extends MetaGraphErrorBody {
   id?: string;
 }
 
+type SortedMediaItem = {
+  url: string;
+  type: string;
+  order: number;
+};
+
 function getMetaErrorMessage(body: MetaGraphErrorBody, fallback: string): string {
   return body.error?.message ?? fallback;
 }
@@ -48,13 +55,50 @@ async function parseMetaResponse<T extends MetaGraphErrorBody>(
   return body;
 }
 
+function sortedMedia(post: PostWithMedia): SortedMediaItem[] {
+  return [...post.mediaAssets]
+    .sort((a, b) => a.order - b.order)
+    .map((asset: MediaAsset) => ({
+      url: asset.renderedUrl ?? asset.originalUrl,
+      type: asset.type,
+      order: asset.order,
+    }));
+}
+
+function resolveAccessToken(account: SocialAccount): string {
+  return decrypt(account.accessTokenEncrypted);
+}
+
+function assertMediaCombination(media: SortedMediaItem[]): void {
+  if (media.length === 0) {
+    throw new PublisherValidationError("Yayınlamak için en az bir medya gereklidir.");
+  }
+
+  const hasVideo = media.some((item) => item.type === "video");
+  const hasImage = media.some((item) => item.type === "image");
+
+  if (hasVideo && hasImage) {
+    throw new PublisherValidationError(
+      "Görsel ve video aynı gönderide birlikte yayınlanamaz.",
+    );
+  }
+
+  if (hasVideo && media.length > 1) {
+    throw new PublisherValidationError("Instagram Reels yalnızca tek bir video destekler.");
+  }
+
+  if (hasImage && media.length > 10) {
+    throw new PublisherValidationError("Instagram carousel en fazla 10 görsel destekler.");
+  }
+}
+
 async function createImageContainer(
   externalAccountId: string,
   accessToken: string,
   imageUrl: string,
   caption: string,
 ): Promise<string> {
-  const url = new URL(`${GRAPH_API_BASE}/${externalAccountId}/media`);
+  const url = new URL(`${META_GRAPH_API_BASE}/${externalAccountId}/media`);
   url.searchParams.set("image_url", imageUrl);
   url.searchParams.set("caption", caption);
   url.searchParams.set("access_token", accessToken);
@@ -72,13 +116,61 @@ async function createImageContainer(
   return body.id;
 }
 
+async function createCarouselChildContainer(
+  externalAccountId: string,
+  accessToken: string,
+  imageUrl: string,
+): Promise<string> {
+  const url = new URL(`${META_GRAPH_API_BASE}/${externalAccountId}/media`);
+  url.searchParams.set("image_url", imageUrl);
+  url.searchParams.set("is_carousel_item", "true");
+  url.searchParams.set("access_token", accessToken);
+
+  const response = await fetch(url, { method: "POST" });
+  const body = await parseMetaResponse<MediaContainerResponse>(
+    response,
+    "Instagram carousel öğe konteyneri oluşturulamadı.",
+  );
+
+  if (!body.id) {
+    throw new PublisherApiError("Instagram carousel öğe kimliği alınamadı.", body);
+  }
+
+  return body.id;
+}
+
+async function createCarouselContainer(
+  externalAccountId: string,
+  accessToken: string,
+  childContainerIds: string[],
+  caption: string,
+): Promise<string> {
+  const url = new URL(`${META_GRAPH_API_BASE}/${externalAccountId}/media`);
+  url.searchParams.set("media_type", "CAROUSEL");
+  url.searchParams.set("children", childContainerIds.join(","));
+  url.searchParams.set("caption", caption);
+  url.searchParams.set("access_token", accessToken);
+
+  const response = await fetch(url, { method: "POST" });
+  const body = await parseMetaResponse<MediaContainerResponse>(
+    response,
+    "Instagram carousel konteyneri oluşturulamadı.",
+  );
+
+  if (!body.id) {
+    throw new PublisherApiError("Instagram carousel konteyner kimliği alınamadı.", body);
+  }
+
+  return body.id;
+}
+
 async function createReelsContainer(
   externalAccountId: string,
   accessToken: string,
   videoUrl: string,
   caption: string,
 ): Promise<string> {
-  const url = new URL(`${GRAPH_API_BASE}/${externalAccountId}/media`);
+  const url = new URL(`${META_GRAPH_API_BASE}/${externalAccountId}/media`);
   url.searchParams.set("media_type", "REELS");
   url.searchParams.set("video_url", videoUrl);
   url.searchParams.set("caption", caption);
@@ -102,7 +194,7 @@ async function publishContainer(
   accessToken: string,
   containerId: string,
 ): Promise<string> {
-  const url = new URL(`${GRAPH_API_BASE}/${externalAccountId}/media_publish`);
+  const url = new URL(`${META_GRAPH_API_BASE}/${externalAccountId}/media_publish`);
   url.searchParams.set("creation_id", containerId);
   url.searchParams.set("access_token", accessToken);
 
@@ -123,7 +215,7 @@ async function getContainerStatus(
   containerId: string,
   accessToken: string,
 ): Promise<ContainerStatusResponse> {
-  const url = new URL(`${GRAPH_API_BASE}/${containerId}`);
+  const url = new URL(`${META_GRAPH_API_BASE}/${containerId}`);
   url.searchParams.set("fields", "status_code");
   url.searchParams.set("access_token", accessToken);
 
@@ -134,27 +226,26 @@ async function getContainerStatus(
   );
 }
 
-function sortedMedia(context: PublishContext) {
-  return [...context.media].sort((a, b) => a.order - b.order);
-}
-
-async function publishSingleImage(context: PublishContext): Promise<PublishResult> {
-  const [item] = sortedMedia(context);
-
-  if (!item || item.type !== "image") {
+async function publishSingleImage(
+  externalAccountId: string,
+  accessToken: string,
+  caption: string,
+  item: SortedMediaItem,
+): Promise<PublishResult> {
+  if (item.type !== "image") {
     throw new PublisherValidationError("Instagram için tek bir görsel gereklidir.");
   }
 
   const containerId = await createImageContainer(
-    context.externalAccountId,
-    context.accessToken,
+    externalAccountId,
+    accessToken,
     item.url,
-    context.caption,
+    caption,
   );
 
   const externalPostId = await publishContainer(
-    context.externalAccountId,
-    context.accessToken,
+    externalAccountId,
+    accessToken,
     containerId,
   );
 
@@ -165,18 +256,62 @@ async function publishSingleImage(context: PublishContext): Promise<PublishResul
   };
 }
 
-async function startReelsPublish(context: PublishContext): Promise<PublishResult> {
-  const [item] = sortedMedia(context);
+async function publishCarousel(
+  externalAccountId: string,
+  accessToken: string,
+  caption: string,
+  items: SortedMediaItem[],
+): Promise<PublishResult> {
+  if (items.some((item) => item.type !== "image")) {
+    throw new PublisherValidationError("Carousel yalnızca görsellerden oluşabilir.");
+  }
 
-  if (!item || item.type !== "video") {
+  const childContainerIds: string[] = [];
+
+  for (const item of items) {
+    const childId = await createCarouselChildContainer(
+      externalAccountId,
+      accessToken,
+      item.url,
+    );
+    childContainerIds.push(childId);
+  }
+
+  const containerId = await createCarouselContainer(
+    externalAccountId,
+    accessToken,
+    childContainerIds,
+    caption,
+  );
+
+  const externalPostId = await publishContainer(
+    externalAccountId,
+    accessToken,
+    containerId,
+  );
+
+  return {
+    outcome: "published",
+    externalPostId,
+    containerId,
+  };
+}
+
+async function startReelsPublish(
+  externalAccountId: string,
+  accessToken: string,
+  caption: string,
+  item: SortedMediaItem,
+): Promise<PublishResult> {
+  if (item.type !== "video") {
     throw new PublisherValidationError("Instagram Reels için tek bir video gereklidir.");
   }
 
   const containerId = await createReelsContainer(
-    context.externalAccountId,
-    context.accessToken,
+    externalAccountId,
+    accessToken,
     item.url,
-    context.caption,
+    caption,
   );
 
   return {
@@ -188,37 +323,36 @@ async function startReelsPublish(context: PublishContext): Promise<PublishResult
 export const instagramPublisher: Publisher = {
   platform: "instagram",
 
-  async publish(context) {
-    const media = sortedMedia(context);
+  async publish(post, _target, account) {
+    const media = sortedMedia(post);
+    assertMediaCombination(media);
 
-    if (media.length === 0) {
-      throw new PublisherValidationError("Yayınlamak için en az bir medya gereklidir.");
+    const accessToken = resolveAccessToken(account);
+    const externalAccountId = account.externalId;
+
+    if (media.length === 1) {
+      const [item] = media;
+      if (!item) {
+        throw new PublisherValidationError("Yayınlamak için en az bir medya gereklidir.");
+      }
+
+      if (item.type === "image") {
+        return publishSingleImage(externalAccountId, accessToken, post.caption, item);
+      }
+
+      if (item.type === "video") {
+        return startReelsPublish(externalAccountId, accessToken, post.caption, item);
+      }
+
+      throw new PublisherValidationError(`Desteklenmeyen medya türü: ${item.type}`);
     }
 
-    if (media.length > 1) {
-      throw new PublisherValidationError(
-        "Instagram adaptörü şu an yalnızca tekli görsel veya Reels destekliyor.",
-      );
-    }
-
-    const [item] = media;
-
-    if (!item) {
-      throw new PublisherValidationError("Yayınlamak için en az bir medya gereklidir.");
-    }
-
-    if (item.type === "image") {
-      return publishSingleImage(context);
-    }
-
-    if (item.type === "video") {
-      return startReelsPublish(context);
-    }
-
-    throw new PublisherValidationError(`Desteklenmeyen medya türü: ${item.type}`);
+    return publishCarousel(externalAccountId, accessToken, post.caption, media);
   },
 
-  async pollPublishStatus(containerId, accessToken, externalAccountId) {
+  async pollPublishStatus(containerId, account) {
+    const accessToken = resolveAccessToken(account);
+    const externalAccountId = account.externalId;
     const status = await getContainerStatus(containerId, accessToken);
 
     switch (status.status_code) {

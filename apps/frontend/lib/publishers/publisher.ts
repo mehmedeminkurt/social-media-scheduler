@@ -1,24 +1,12 @@
+import type { MediaAsset, Post, PostTarget, SocialAccount } from "@prisma/client";
+
 export const SUPPORTED_PUBLISH_PLATFORMS = ["instagram"] as const;
 
 export type PublishPlatform = (typeof SUPPORTED_PUBLISH_PLATFORMS)[number];
 
 export type PublishOutcome = "published" | "pending" | "failed";
 
-export type MediaType = "image" | "video";
-
-export interface PublishMediaItem {
-  url: string;
-  type: MediaType;
-  order: number;
-}
-
-export interface PublishContext {
-  companyId: string;
-  caption: string;
-  media: PublishMediaItem[];
-  accessToken: string;
-  externalAccountId: string;
-}
+export type PostWithMedia = Post & { mediaAssets: MediaAsset[] };
 
 export interface PublishResult {
   outcome: PublishOutcome;
@@ -30,10 +18,13 @@ export interface PublishResult {
 
 export interface Publisher {
   readonly platform: PublishPlatform;
-  publish(context: PublishContext): Promise<PublishResult>;
+  publish(
+    post: PostWithMedia,
+    target: PostTarget,
+    account: SocialAccount,
+  ): Promise<PublishResult>;
   pollPublishStatus?(
     containerId: string,
-    accessToken: string,
-    externalAccountId: string,
+    account: SocialAccount,
   ): Promise<PublishResult>;
 }

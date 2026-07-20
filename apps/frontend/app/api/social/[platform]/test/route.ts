@@ -4,6 +4,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { apiError, apiSuccess } from "@/lib/api-response-server";
 import { decrypt } from "@/lib/crypto";
+import { META_GRAPH_API_BASE } from "@/lib/meta/graph-api";
 import { prisma } from "@/lib/prisma";
 import { requireCompanyAccess, TenantAccessError } from "@/lib/tenant";
 
@@ -66,7 +67,7 @@ export async function POST(
     if (platform === "instagram") {
       try {
         const res = await fetch(
-          `https://graph.facebook.com/v19.0/me?access_token=${accessToken}`,
+          `${META_GRAPH_API_BASE}/me?access_token=${accessToken}`,
         );
         const data = await res.json() as { id?: string; error?: { message: string } };
 

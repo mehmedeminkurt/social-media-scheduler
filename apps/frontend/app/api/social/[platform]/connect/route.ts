@@ -4,6 +4,7 @@ import { getServerSession } from "next-auth/next";
 
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { apiError } from "@/lib/api-response-server";
+import { META_OAUTH_DIALOG_URL } from "@/lib/meta/graph-api";
 import { prisma } from "@/lib/prisma";
 import { requireCompanyAccess, TenantAccessError } from "@/lib/tenant";
 
@@ -13,7 +14,7 @@ const SUPPORTED_PLATFORMS: Platform[] = ["instagram", "linkedin"];
 
 const OAUTH_CONFIGS: Record<Platform, { authUrl: string; scope: string }> = {
   instagram: {
-    authUrl: "https://www.facebook.com/v19.0/dialog/oauth",
+    authUrl: META_OAUTH_DIALOG_URL,
     // instagram_content_publish için pages_read_engagement + pages_show_list gereklidir.
     scope:
       "instagram_basic,instagram_content_publish,pages_read_engagement,pages_show_list",
