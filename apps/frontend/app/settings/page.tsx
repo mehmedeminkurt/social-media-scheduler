@@ -411,7 +411,6 @@ function SettingsContent() {
             config={instagram}
             setConfig={setInstagram}
             connectedAccount={getConnectedAccount("instagram")}
-            redirectUri={`${origin}/api/social/instagram/callback`}
             onSave={() => handleSave("instagram")}
             onDisconnect={() => handleDisconnect("instagram")}
           />
@@ -437,7 +436,6 @@ function SettingsContent() {
             config={linkedin}
             setConfig={setLinkedin}
             connectedAccount={getConnectedAccount("linkedin")}
-            redirectUri={`${origin}/api/social/linkedin/callback`}
             onSave={() => handleSave("linkedin")}
             onDisconnect={() => handleDisconnect("linkedin")}
           />
@@ -457,7 +455,6 @@ interface PlatformCardProps {
   config: PlatformConfig;
   setConfig: React.Dispatch<React.SetStateAction<PlatformConfig>>;
   connectedAccount: ConnectedAccount | undefined;
-  redirectUri: string;
   onSave: () => void;
   onDisconnect: () => void;
 }
@@ -470,7 +467,6 @@ function PlatformCard({
   config,
   setConfig,
   connectedAccount,
-  redirectUri,
   onSave,
   onDisconnect,
 }: PlatformCardProps) {

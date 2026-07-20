@@ -1,6 +1,6 @@
 {
   "$schema": "https://turborepo.dev/schema.json",
-  "globalEnv": ["NODE_ENV", "DATABASE_URL", "NEXTAUTH_SECRET", "RESEND_API_KEY"],
+  "globalEnv": ["NODE_ENV", "DATABASE_URL", "NEXTAUTH_SECRET", "RESEND_API_KEY", "ENCRYPTION_KEY"],
   "ui": "tui",
   "tasks": {
     "build": {
