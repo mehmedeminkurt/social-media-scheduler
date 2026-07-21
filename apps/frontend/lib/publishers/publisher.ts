@@ -1,6 +1,6 @@
 import type { MediaAsset, Post, PostTarget, SocialAccount } from "@prisma/client";
 
-export const SUPPORTED_PUBLISH_PLATFORMS = ["instagram"] as const;
+export const SUPPORTED_PUBLISH_PLATFORMS = ["instagram", "linkedin"] as const;
 
 export type PublishPlatform = (typeof SUPPORTED_PUBLISH_PLATFORMS)[number];
 

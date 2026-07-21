@@ -21,7 +21,7 @@ const OAUTH_CONFIGS: Record<Platform, { authUrl: string; scope: string }> = {
   },
   linkedin: {
     authUrl: "https://www.linkedin.com/oauth/v2/authorization",
-    scope: "w_member_social openid profile email",
+    scope: "w_organization_social openid profile email",
   },
 };
 

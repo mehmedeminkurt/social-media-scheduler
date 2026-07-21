@@ -3,6 +3,11 @@ import { getServerSession } from "next-auth/next";
 
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { decrypt, encrypt } from "@/lib/crypto";
+import {
+  LINKEDIN_ORG_URN_PREFIX,
+  linkedInHeaders,
+  LINKEDIN_REST_BASE,
+} from "@/lib/linkedin/api";
 import { META_GRAPH_API_BASE } from "@/lib/meta/graph-api";
 import { prisma } from "@/lib/prisma";
 import { requireCompanyAccess, TenantAccessError } from "@/lib/tenant";
@@ -120,6 +125,60 @@ async function handleInstagramCallback(
 
 // ─── LinkedIn ─────────────────────────────────────────────────────────────────
 
+interface OrganizationAclElement {
+  organization?: string;
+  role?: string;
+  state?: string;
+}
+
+interface OrganizationAclsResponse {
+  elements?: OrganizationAclElement[];
+  message?: string;
+}
+
+function extractOrganizationId(organizationUrn: string): string | undefined {
+  if (!organizationUrn.startsWith(LINKEDIN_ORG_URN_PREFIX)) {
+    return undefined;
+  }
+
+  const orgId = organizationUrn.slice(LINKEDIN_ORG_URN_PREFIX.length);
+  return orgId.length > 0 ? orgId : undefined;
+}
+
+async function fetchLinkedInOrganizationId(accessToken: string): Promise<string> {
+  const url = new URL(`${LINKEDIN_REST_BASE}/organizationAcls`);
+  url.searchParams.set("q", "roleAssignee");
+  url.searchParams.set("role", "ADMINISTRATOR");
+
+  const response = await fetch(url, {
+    headers: linkedInHeaders(accessToken),
+  });
+
+  const body = (await response.json()) as OrganizationAclsResponse;
+
+  if (!response.ok) {
+    throw new Error(body.message ?? "LinkedIn organizasyon listesi alınamadı.");
+  }
+
+  const organizationUrn = body.elements?.find(
+    (element) =>
+      element.state === "APPROVED" &&
+      typeof element.organization === "string" &&
+      element.organization.startsWith(LINKEDIN_ORG_URN_PREFIX),
+  )?.organization;
+
+  if (!organizationUrn) {
+    throw new Error("LINKEDIN_NO_ORGANIZATION");
+  }
+
+  const organizationId = extractOrganizationId(organizationUrn);
+  if (!organizationId) {
+    throw new Error("LINKEDIN_NO_ORGANIZATION");
+  }
+
+  return organizationId;
+}
+
 async function handleLinkedInCallback(
   code: string,
   clientId: string,
@@ -158,46 +217,21 @@ async function handleLinkedInCallback(
   const accessToken = tokenData.access_token;
   const expiresIn = tokenData.expires_in ?? 5184000; // varsayılan 60 gün
 
-  // 2. Kullanıcı bilgisi al — tam yanıtı logla (externalId garantisi)
-  const userInfoRes = await fetch("https://api.linkedin.com/v2/userinfo", {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
-  const userInfo = await userInfoRes.json() as Record<string, unknown>;
-
-  // Güvenilirlik için tam yanıtı logla; farklı API versiyonlarını tespit edebiliriz
-  console.log(
-    "[LinkedIn userinfo raw response]:",
-    JSON.stringify(userInfo),
-  );
-
-  // OpenID Connect standardı: "sub" — LinkedIn eski versiyonları: "id"
-  const externalId =
-    typeof userInfo.sub === "string" ? userInfo.sub :
-    typeof userInfo.id  === "string" ? userInfo.id  :
-    undefined;
-
-  if (!externalId) {
-    throw new Error("LinkedIn externalId alınamadı");
-  }
+  // 2. Yönetici olunan organizasyonu al (author = urn:li:organization:{id})
+  const organizationId = await fetchLinkedInOrganizationId(accessToken);
 
   const tokenExpiresAt = new Date(Date.now() + expiresIn * 1000);
 
-  await prisma.socialAccount.upsert({
-    where: {
-      companyId_platform_externalId: {
-        companyId,
-        platform: "linkedin",
-        externalId,
-      },
-    },
-    update: {
-      accessTokenEncrypted: encrypt(accessToken),
-      tokenExpiresAt,
-    },
-    create: {
+  // Eski bağlantıları temizle — externalId artık org id olacak
+  await prisma.socialAccount.deleteMany({
+    where: { companyId, platform: "linkedin" },
+  });
+
+  await prisma.socialAccount.create({
+    data: {
       companyId,
       platform: "linkedin",
-      externalId,
+      externalId: organizationId,
       accessTokenEncrypted: encrypt(accessToken),
       tokenExpiresAt,
     },
@@ -345,6 +379,13 @@ export async function GET(
         "Bağlı bir Instagram Professional (Business/Creator) hesabı bulunamadı. " +
         "Kişisel hesaplar desteklenmemektedir. " +
         "Lütfen hesabınızı bir Facebook Sayfasına bağlayıp Business/Creator hesabına geçirin.",
+      );
+    }
+
+    if (message === "LINKEDIN_NO_ORGANIZATION") {
+      return redirectError(
+        "Yönetici olduğunuz bir LinkedIn organizasyonu bulunamadı. " +
+        "Community Management API onayı ve w_organization_social kapsamı gereklidir.",
       );
     }
 

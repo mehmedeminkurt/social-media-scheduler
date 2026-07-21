@@ -5,12 +5,50 @@ import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useEffect, useState } from "react";
 
+interface PostTargetSummary {
+  platform: string;
+  status: string;
+}
+
 interface PostSummary {
   id: string;
   caption: string;
   status: string;
   createdAt: string;
   mediaCount: number;
+  targets: PostTargetSummary[];
+}
+
+/* Platform bazlı mini simgeler — duruma göre arka plan rengi değişir */
+const TARGET_STATUS_BG: Record<string, string> = {
+  PUBLISHED: "bg-emerald-500/90 shadow-emerald-500/30",
+  FAILED: "bg-rose-500/90 shadow-rose-500/30",
+  PUBLISHING: "bg-amber-500/90 shadow-amber-500/30 animate-pulse",
+  SCHEDULED: "bg-blue-500/70 shadow-blue-500/20",
+  DRAFT: "bg-zinc-600 shadow-none",
+};
+
+function TargetStatusIcon({ target }: { target: PostTargetSummary }) {
+  const bgClass = TARGET_STATUS_BG[target.status] ?? TARGET_STATUS_BG["DRAFT"];
+
+  return (
+    <div
+      title={`${target.platform}: ${target.status}`}
+      className={`w-5 h-5 rounded-md flex items-center justify-center shadow-sm ${bgClass}`}
+    >
+      {target.platform === "instagram" ? (
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="white">
+          <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.051.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 100 12.324 6.162 6.162 0 000-12.324zM12 16a4 4 0 110-8 4 4 0 010 8zm6.406-11.845a1.44 1.44 0 100 2.881 1.44 1.44 0 000-2.881z" />
+        </svg>
+      ) : target.platform === "linkedin" ? (
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="white">
+          <path d="M19 3a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14m-.5 15.5v-5.3a3.26 3.26 0 0 0-3.26-3.26c-.85 0-1.84.52-2.28 1.3v-1.11h-2.79v8.37h2.79v-4.93c0-.77.62-1.4 1.39-1.4a1.4 1.4 0 0 1 1.4 1.4v4.93h2.75M6.88 8.56a1.68 1.68 0 0 0 1.68-1.68c0-.93-.75-1.69-1.68-1.69a1.69 1.69 0 0 0-1.69 1.69c0 .93.76 1.68 1.69 1.68m1.39 9.94v-8.37H5.5v8.37h2.77z" />
+        </svg>
+      ) : (
+        <span className="text-white text-[9px]">🌐</span>
+      )}
+    </div>
+  );
 }
 
 export default function DashboardPage() {
@@ -122,29 +160,59 @@ export default function DashboardPage() {
         {/* Active Services — single full-width card */}
         <div className="mb-10">
           <div className="p-6 rounded-2xl bg-zinc-900/50 border border-zinc-800 hover:border-zinc-700 transition-all duration-200 mt-8">
-            <span className="text-xs font-semibold text-zinc-500 uppercase tracking-wider block mb-3 mt-4 ml-8">
+            <span className="text-xs font-semibold text-zinc-500 uppercase tracking-wider block mb-4 ml-8">
               Aktif Servisler / Platformlar
             </span>
-            <div className="flex items-center gap-3 ml-8">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-yellow-500 via-red-500 to-purple-600 p-0.5 flex items-center justify-center shadow-lg shadow-pink-500/10">
-                <div className="w-full h-full bg-zinc-900 rounded-[5px] flex items-center justify-center">
-                  <svg
-                    width="18"
-                    height="18"
-                    className="w-[18px] h-[18px] text-pink-500"
-                    fill="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.051.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 100 12.324 6.162 6.162 0 000-12.324zM12 16a4 4 0 110-8 4 4 0 010 8zm6.406-11.845a1.44 1.44 0 100 2.881 1.44 1.44 0 000-2.881z" />
-                  </svg>
+            
+            {/* Yan yana ve aralarındaki boşluk optimize edilmiş yapı */}
+            <div className="flex flex-wrap items-center gap-x-12 gap-y-4 ml-8 mr-8">
+              
+              {/* Instagram Kartı */}
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-yellow-500 via-red-500 to-purple-600/20 p-0.5 flex items-center justify-center shadow-lg shadow-pink-500/20 border border-pink-500/30">
+                  <div className="w-full h-full bg-zinc-900 rounded-[5px] flex items-center justify-center">
+                    <svg
+                      width="18"
+                      height="18"
+                      className="w-[18px] h-[18px] text-pink-500"
+                      fill="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.051.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 100 12.324 6.162 6.162 0 000-12.324zM12 16a4 4 0 110-8 4 4 0 010 8zm6.406-11.845a1.44 1.44 0 100 2.881 1.44 1.44 0 000-2.881z" />
+                    </svg>
+                  </div>
+                </div>
+                <div className="flex items-baseline gap-2.5">
+                  <span className="text-xl font-bold text-zinc-100">Instagram</span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/25 font-semibold tracking-wide uppercase mr-1">
+                    Aktif
+                  </span>
                 </div>
               </div>
-              <div className="flex items-baseline gap-2.5">
-                <span className="text-xl font-bold text-zinc-100">Instagram</span>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/25 font-semibold tracking-wide uppercase mr-1">
-                  Aktif
-                </span>
+
+              {/* LinkedIn Kartı */}
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-[#0A66C2]/20 p-0.5 flex items-center justify-center shadow-lg shadow-blue-500/20 border border-[#0A66C2]/30">
+                  <div className="w-full h-full bg-zinc-900 rounded-[5px] flex items-center justify-center">
+                    <svg
+                      width="18"
+                      height="18"
+                      className="w-[18px] h-[18px] text-[#0A66C2]"
+                      fill="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path d="M19 3a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14m-.5 15.5v-5.3a3.26 3.26 0 0 0-3.26-3.26c-.85 0-1.84.52-2.28 1.3v-1.11h-2.79v8.37h2.79v-4.93c0-.77.62-1.4 1.39-1.4a1.4 1.4 0 0 1 1.4 1.4v4.93h2.75M6.88 8.56a1.68 1.68 0 0 0 1.68-1.68c0-.93-.75-1.69-1.68-1.69a1.69 1.69 0 0 0-1.69 1.69c0 .93.76 1.68 1.69 1.68m1.39 9.94v-8.37H5.5v8.37h2.77z" />
+                    </svg>
+                  </div>
+                </div>
+                <div className="flex items-baseline gap-2.5">
+                  <span className="text-xl font-bold text-zinc-100">LinkedIn</span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/25 font-semibold tracking-wide uppercase mr-1">
+                    Aktif
+                  </span>
+                </div>
               </div>
+
             </div>
           </div>
         </div>
@@ -198,6 +266,13 @@ export default function DashboardPage() {
                     </div>
 
                     <div className="flex items-center gap-3 px-2">
+                      {post.targets.length > 0 && (
+                        <div className="flex items-center gap-1.5">
+                          {post.targets.map((target) => (
+                            <TargetStatusIcon key={target.platform} target={target} />
+                          ))}
+                        </div>
+                      )}
                       <span className="text-xs text-zinc-500 bg-zinc-900/80 px-2.5 py-1.5 rounded-lg border border-zinc-800 font-medium">
                         📁 {post.mediaCount} Medya
                       </span>

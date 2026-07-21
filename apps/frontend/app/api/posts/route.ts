@@ -103,6 +103,9 @@ export async function GET(req: Request) {
         mediaAssets: {
           select: { id: true },
         },
+        targets: {
+          select: { platform: true, status: true },
+        },
       },
       orderBy: { createdAt: "desc" },
     });
@@ -113,6 +116,10 @@ export async function GET(req: Request) {
       status: post.status,
       createdAt: post.createdAt,
       mediaCount: post.mediaAssets.length,
+      targets: post.targets.map((target) => ({
+        platform: target.platform,
+        status: target.status,
+      })),
     }));
 
     return apiSuccess(postsWithMediaCount);
