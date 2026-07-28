@@ -1,10 +1,9 @@
-import { PostStatus } from "@prisma/client";
 import { getServerSession } from "next-auth/next";
 
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { apiError, apiSuccess } from "@/lib/api-response-server";
 import { PostNotFoundError, requirePostForCompany } from "@/lib/posts/access";
-import { publishPostToTargets } from "@/lib/posts/publish-post";
+import { AlreadyPublishingError, publishPostToTargets } from "@/lib/posts/publish-post";
 import { prisma } from "@/lib/prisma";
 import { TenantAccessError } from "@/lib/tenant";
 
@@ -31,22 +30,11 @@ export async function POST(
 
     const post = await prisma.post.findUnique({
       where: { id: postId },
-      include: {
-        targets: true,
-        mediaAssets: true,
-      },
+      include: { targets: true, mediaAssets: true },
     });
 
     if (!post) {
       return apiError("Gönderi bulunamadı.", 404);
-    }
-
-    if (post.status === PostStatus.PUBLISHING) {
-      return apiError("Gönderi zaten yayınlanıyor.", 409);
-    }
-
-    if (post.status === PostStatus.PUBLISHED) {
-      return apiError("Gönderi zaten yayınlandı.", 409);
     }
 
     if (post.targets.length === 0) {
@@ -57,7 +45,17 @@ export async function POST(
       return apiError("Yayınlamak için en az bir medya yükleyin.", 400);
     }
 
-    const result = await publishPostToTargets(postId);
+    // The double-publish guard now lives inside publishPostToTargets as an
+    // atomic claim; a concurrent/duplicate call throws AlreadyPublishingError.
+    let result;
+    try {
+      result = await publishPostToTargets(postId);
+    } catch (error) {
+      if (error instanceof AlreadyPublishingError) {
+        return apiError(error.message, 409);
+      }
+      throw error;
+    }
 
     const updatedPost = await prisma.post.findUniqueOrThrow({
       where: { id: postId },

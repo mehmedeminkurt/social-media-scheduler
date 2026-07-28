@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useEffect, useState } from "react";
 
@@ -53,7 +52,6 @@ function TargetStatusIcon({ target }: { target: PostTargetSummary }) {
 
 export default function DashboardPage() {
   const { data: session, status } = useSession({ required: true });
-  const router = useRouter();
   const [recentPosts, setRecentPosts] = useState<PostSummary[]>([]);
   const [isLoadingPosts, setIsLoadingPosts] = useState(true);
 

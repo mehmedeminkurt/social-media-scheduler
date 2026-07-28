@@ -47,7 +47,6 @@ function SettingsContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  const [origin, setOrigin] = useState("http://localhost:3000");
   const [notification, setNotification] = useState<{
     type: "success" | "error";
     message: string;
@@ -74,12 +73,6 @@ function SettingsContent() {
     errorMessage: "",
     showSecret: false,
   });
-
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      setOrigin(window.location.origin);
-    }
-  }, []);
 
   // URL param'larından OAuth geri bildirim bildirimini göster
   useEffect(() => {

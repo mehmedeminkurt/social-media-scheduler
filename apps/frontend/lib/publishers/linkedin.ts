@@ -14,11 +14,7 @@ import {
   PublisherConfigError,
   PublisherValidationError,
 } from "@/lib/publishers/errors";
-import type {
-  PostWithMedia,
-  Publisher,
-  PublishResult,
-} from "@/lib/publishers/publisher";
+import type { PostWithMedia, Publisher } from "@/lib/publishers/publisher";
 
 interface InitializeUploadResponse {
   value?: {
