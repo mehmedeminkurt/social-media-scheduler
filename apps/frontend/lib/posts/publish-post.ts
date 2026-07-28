@@ -9,6 +9,14 @@ import { prisma } from "@/lib/prisma";
 const REELS_POLL_INTERVAL_MS = 3000;
 const REELS_MAX_POLL_ATTEMPTS = 40;
 
+/** Thrown when the post is already being published or has been published. */
+export class AlreadyPublishingError extends Error {
+  constructor(message = "Gönderi zaten yayınlanıyor veya yayınlandı.") {
+    super(message);
+    this.name = "AlreadyPublishingError";
+  }
+}
+
 export type TargetPublishOutcome = {
   platform: string;
   status: PostStatus;
@@ -50,6 +58,8 @@ async function pollUntilPublished(
   };
 }
 
+// Fully guarded: any throw (including during the async poll step) becomes a
+// FAILED outcome for THIS target — it never aborts the rest of the post.
 async function publishToTarget(
   post: PostWithMedia,
   target: PostTarget,
@@ -57,10 +67,26 @@ async function publishToTarget(
 ): Promise<TargetPublishOutcome> {
   const publisher = getPublisher(target.platform);
 
-  let result: PublishResult;
-
   try {
-    result = await publisher.publish(post, target, account);
+    let result = await publisher.publish(post, target, account);
+
+    if (result.outcome === "pending" && result.containerId) {
+      result = await pollUntilPublished(publisher, result.containerId, account);
+    }
+
+    if (result.outcome === "published") {
+      return {
+        platform: target.platform,
+        status: PostStatus.PUBLISHED,
+        externalPostId: result.externalPostId,
+      };
+    }
+
+    return {
+      platform: target.platform,
+      status: PostStatus.FAILED,
+      error: result.error ?? "Yayın başarısız oldu.",
+    };
   } catch (error) {
     const message =
       error instanceof PublisherError
@@ -73,126 +99,166 @@ async function publishToTarget(
       error: message,
     };
   }
-
-  if (result.outcome === "pending" && result.containerId) {
-    result = await pollUntilPublished(publisher, result.containerId, account);
-  }
-
-  if (result.outcome === "published") {
-    return {
-      platform: target.platform,
-      status: PostStatus.PUBLISHED,
-      externalPostId: result.externalPostId,
-    };
-  }
-
-  return {
-    platform: target.platform,
-    status: PostStatus.FAILED,
-    error: result.error ?? "Yayın başarısız oldu.",
-  };
 }
 
-function aggregatePostStatus(targets: TargetPublishOutcome[]): PostStatus {
-  if (targets.length === 0) {
+function buildTargetLogMessage(
+  platform: string,
+  outcome: TargetPublishOutcome,
+): string {
+  if (outcome.status !== PostStatus.PUBLISHED) {
+    return `${platform} yayını başarısız: ${outcome.error}`;
+  }
+
+  const idSuffix = outcome.externalPostId ? ` ID: ${outcome.externalPostId}` : "";
+  return `${platform} yayını başarılı.${idSuffix}`;
+}
+
+function aggregatePostStatus(statuses: PostStatus[]): PostStatus {
+  if (statuses.length === 0) {
     return PostStatus.FAILED;
   }
 
-  const allPublished = targets.every((target) => target.status === PostStatus.PUBLISHED);
-  if (allPublished) {
+  const publishedCount = statuses.filter(
+    (status) => status === PostStatus.PUBLISHED,
+  ).length;
+
+  if (publishedCount === statuses.length) {
     return PostStatus.PUBLISHED;
+  }
+
+  if (publishedCount > 0) {
+    return PostStatus.PARTIAL;
   }
 
   return PostStatus.FAILED;
 }
 
-export async function publishPostToTargets(postId: string): Promise<PostPublishResult> {
-  const post = await prisma.post.findUniqueOrThrow({
-    where: { id: postId },
-    include: {
-      targets: true,
-      mediaAssets: true,
-    },
+async function finalizePostStatus(postId: string): Promise<PostStatus> {
+  const targets = await prisma.postTarget.findMany({
+    where: { postId },
+    select: { status: true },
   });
+
+  const status = aggregatePostStatus(targets.map((target) => target.status));
 
   await prisma.post.update({
     where: { id: postId },
+    data: { status },
+  });
+
+  return status;
+}
+
+export async function publishPostToTargets(
+  postId: string,
+): Promise<PostPublishResult> {
+  // Atomic claim: only one caller can move the post into PUBLISHING. A second
+  // concurrent /publish (double-click, retry) matches 0 rows and is rejected,
+  // so we never publish the same post twice.
+  const claim = await prisma.post.updateMany({
+    where: {
+      id: postId,
+      status: { notIn: [PostStatus.PUBLISHING, PostStatus.PUBLISHED] },
+    },
     data: { status: PostStatus.PUBLISHING },
   });
 
+  if (claim.count === 0) {
+    throw new AlreadyPublishingError();
+  }
+
   await prisma.postLog.create({
-    data: {
-      postId,
-      level: "info",
-      message: "Yayın işlemi başlatıldı.",
-    },
+    data: { postId, level: "info", message: "Yayın işlemi başlatıldı." },
   });
 
-  const targetOutcomes: TargetPublishOutcome[] = [];
-
-  for (const target of post.targets) {
-    const account = await prisma.socialAccount.findFirst({
-      where: {
-        companyId: post.companyId,
-        platform: target.platform,
-      },
+  try {
+    const post = await prisma.post.findUniqueOrThrow({
+      where: { id: postId },
+      include: { targets: true, mediaAssets: true },
     });
 
-    if (!account) {
-      const error = `${target.platform} için bağlı hesap bulunamadı.`;
+    const targetOutcomes: TargetPublishOutcome[] = [];
+
+    for (const target of post.targets) {
+      // Retry safety: never re-publish a target that already succeeded — that
+      // would create a duplicate real post on the platform.
+      if (target.status === PostStatus.PUBLISHED) {
+        targetOutcomes.push({
+          platform: target.platform,
+          status: PostStatus.PUBLISHED,
+          externalPostId: target.externalPostId ?? undefined,
+        });
+        continue;
+      }
+
+      const account = await prisma.socialAccount.findFirst({
+        where: { companyId: post.companyId, platform: target.platform },
+      });
+
+      if (!account) {
+        const error = `${target.platform} için bağlı hesap bulunamadı.`;
+        await prisma.postTarget.update({
+          where: { id: target.id },
+          data: { status: PostStatus.FAILED, error, attempts: { increment: 1 } },
+        });
+        await prisma.postLog.create({
+          data: { postId, level: "error", message: error },
+        });
+        targetOutcomes.push({
+          platform: target.platform,
+          status: PostStatus.FAILED,
+          error,
+        });
+        continue;
+      }
+
+      const outcome = await publishToTarget(post, target, account);
+
       await prisma.postTarget.update({
         where: { id: target.id },
         data: {
-          status: PostStatus.FAILED,
-          error,
+          status: outcome.status,
+          externalPostId: outcome.externalPostId ?? target.externalPostId ?? null,
+          error: outcome.error ?? null,
           attempts: { increment: 1 },
         },
       });
+
       await prisma.postLog.create({
-        data: { postId, level: "error", message: error },
+        data: {
+          postId,
+          level: outcome.status === PostStatus.PUBLISHED ? "info" : "error",
+          message: buildTargetLogMessage(target.platform, outcome),
+        },
       });
-      targetOutcomes.push({
-        platform: target.platform,
-        status: PostStatus.FAILED,
-        error,
-      });
-      continue;
+
+      targetOutcomes.push(outcome);
     }
 
-    const outcome = await publishToTarget(post, target, account);
+    const postStatus = await finalizePostStatus(postId);
+    return { postStatus, targets: targetOutcomes };
+  } catch (error) {
+    // Never leave the post stuck in PUBLISHING on an unexpected failure —
+    // recompute status from whatever the targets persisted so a retry is possible.
+    try {
+      const status = await finalizePostStatus(postId);
+      if (status === PostStatus.PUBLISHING) {
+        await prisma.post.update({
+          where: { id: postId },
+          data: { status: PostStatus.FAILED },
+        });
+      }
+      await prisma.postLog.create({
+        data: {
+          postId,
+          level: "error",
+          message: "Yayın beklenmedik şekilde durdu.",
+        },
+      });
+    } catch {
+      // Best-effort recovery; surface the original error below.
+    }
 
-    await prisma.postTarget.update({
-      where: { id: target.id },
-      data: {
-        status: outcome.status,
-        externalPostId: outcome.externalPostId ?? null,
-        error: outcome.error ?? null,
-        attempts: { increment: 1 },
-      },
-    });
-
-    await prisma.postLog.create({
-      data: {
-        postId,
-        level: outcome.status === PostStatus.PUBLISHED ? "info" : "error",
-        message:
-          outcome.status === PostStatus.PUBLISHED
-            ? `${target.platform} yayını başarılı.${
-                outcome.externalPostId ? ` ID: ${outcome.externalPostId}` : ""
-              }`
-            : `${target.platform} yayını başarısız: ${outcome.error}`,
-      },
-    });
-
-    targetOutcomes.push(outcome);
+    throw error;
   }
-
-  const postStatus = aggregatePostStatus(targetOutcomes);
-
-  await prisma.post.update({
-    where: { id: postId },
-    data: { status: postStatus },
-  });
-
-  return { postStatus, targets: targetOutcomes };
 }

@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { type NextRequest } from "next/server";
 import { getServerSession } from "next-auth/next";
 
@@ -12,6 +13,43 @@ import { uploadMedia } from "@/lib/storage/media";
 import { TenantAccessError } from "@/lib/tenant";
 
 const MAX_UPLOAD_BYTES = 100 * 1024 * 1024;
+const MAX_MEDIA_PER_POST = 10;
+const MAX_ORDER_RETRIES = 5;
+
+// Insert the asset with the next free order value. A unique (postId, order)
+// constraint makes concurrent uploads to the same post race-safe: the loser of
+// a race hits P2002 and retries with a freshly-computed order.
+async function createMediaAssetWithOrder(
+  postId: string,
+  type: string,
+  originalUrl: string,
+): Promise<{ ok: true; asset: Awaited<ReturnType<typeof prisma.mediaAsset.create>> } | { ok: false; full: true }> {
+  for (let attempt = 0; attempt <= MAX_ORDER_RETRIES; attempt++) {
+    const count = await prisma.mediaAsset.count({ where: { postId } });
+
+    if (count >= MAX_MEDIA_PER_POST) {
+      return { ok: false, full: true };
+    }
+
+    try {
+      const asset = await prisma.mediaAsset.create({
+        data: { postId, type, originalUrl, order: count },
+      });
+      return { ok: true, asset };
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === "P2002" &&
+        attempt < MAX_ORDER_RETRIES
+      ) {
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  return { ok: false, full: true };
+}
 
 export async function POST(
   req: NextRequest,
@@ -32,6 +70,13 @@ export async function POST(
       return apiError("Aktif şirket bulunamadı.", 400);
     }
 
+    // Reject oversized uploads via Content-Length BEFORE buffering the whole
+    // body into memory with formData() — otherwise the size check is too late.
+    const contentLength = Number(req.headers.get("content-length") ?? "0");
+    if (Number.isFinite(contentLength) && contentLength > MAX_UPLOAD_BYTES) {
+      return apiError("Dosya boyutu 100 MB sınırını aşıyor.", 413);
+    }
+
     await requirePostForCompany(userId, companyId, postId);
 
     const existingAssets = await prisma.mediaAsset.findMany({
@@ -40,9 +85,7 @@ export async function POST(
       orderBy: { order: "asc" },
     });
 
-    const existingCount = existingAssets.length;
-
-    if (existingCount >= 10) {
+    if (existingAssets.length >= MAX_MEDIA_PER_POST) {
       return apiError("Bir gönderiye en fazla 10 adet medya eklenebilir.", 400);
     }
 
@@ -69,7 +112,7 @@ export async function POST(
       );
     }
 
-    if (existingCount > 0) {
+    if (existingAssets.length > 0) {
       const existingType = existingAssets[0]?.type;
       if (existingType && existingType !== resolvedType.mediaType) {
         return apiError(
@@ -108,16 +151,17 @@ export async function POST(
       resolvedType.contentType,
     );
 
-    const mediaAsset = await prisma.mediaAsset.create({
-      data: {
-        postId,
-        type: resolvedType.mediaType,
-        originalUrl,
-        order: existingCount,
-      },
-    });
+    const created = await createMediaAssetWithOrder(
+      postId,
+      resolvedType.mediaType,
+      originalUrl,
+    );
 
-    return apiSuccess(mediaAsset, 201);
+    if (!created.ok) {
+      return apiError("Bir gönderiye en fazla 10 adet medya eklenebilir.", 400);
+    }
+
+    return apiSuccess(created.asset, 201);
   } catch (error: unknown) {
     if (error instanceof TenantAccessError) {
       return apiError(error.message, 403);
