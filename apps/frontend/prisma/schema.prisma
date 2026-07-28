@@ -85,17 +85,21 @@ model Post {
   caption     String
   scheduledAt DateTime?
   status      PostStatus   @default(DRAFT)
+  brandKitId  String?
+  aspectRatio String?      // e.g. "1:1", "4:5", "9:16"
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
 
   company     Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
   author      User         @relation(fields: [authorId], references: [id])
+  brandKit    BrandKit?    @relation(fields: [brandKitId], references: [id], onDelete: SetNull)
   targets     PostTarget[]
   mediaAssets MediaAsset[]
   logs        PostLog[]
 
   @@index([companyId, status])
   @@index([companyId, scheduledAt])
+  @@index([brandKitId])
 }
 
 model PostTarget {
@@ -154,6 +158,7 @@ model BrandKit {
   updatedAt     DateTime @updatedAt
 
   company       Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  posts         Post[]
 
   @@index([companyId])
 }

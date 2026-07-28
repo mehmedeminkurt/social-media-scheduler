@@ -19,7 +19,15 @@ interface UploadedMedia {
   _file?: File;
 }
 
+interface BrandKit {
+  id: string;
+  name: string;
+  logoUrl: string | null;
+  colors: Record<string, string>;
+}
+
 type Step = "form" | "uploading" | "publishing" | "done" | "error";
+type AspectRatio = "1:1" | "4:5" | "9:16";
 
 const InstagramIcon = () => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" className="text-pink-400">
@@ -72,6 +80,19 @@ export default function NewPostPage() {
   const [step, setStep] = useState<Step>("form");
   const [uploadProgress, setUploadProgress] = useState<{ done: number; total: number }>({ done: 0, total: 0 });
   const [errorMessage, setErrorMessage] = useState("");
+
+  /* brand kit + aspect ratio */
+  const [brandKits, setBrandKits] = useState<BrandKit[]>([]);
+  const [selectedBrandKitId, setSelectedBrandKitId] = useState<string | null>(null);
+  const [selectedAspectRatio, setSelectedAspectRatio] = useState<AspectRatio>("1:1");
+
+  /* load brand kits on mount */
+  useEffect(() => {
+    fetch("/api/brand-kits")
+      .then((r) => r.json())
+      .then((j) => { if (j.success) setBrandKits(j.data as BrandKit[]); })
+      .catch(() => { /* brand kits optional */ });
+  }, []);
 
   /* cleanup preview URLs */
   useEffect(() => {
@@ -203,7 +224,12 @@ export default function NewPostPage() {
       const createRes = await fetch("/api/posts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ caption, platforms: selectedPlatforms }),
+        body: JSON.stringify({
+          caption,
+          platforms: selectedPlatforms,
+          brandKitId: selectedBrandKitId ?? undefined,
+          aspectRatio: selectedAspectRatio,
+        }),
       });
       const createJson = await createRes.json() as { success: boolean; data?: { id: string }; error?: string };
       if (!createRes.ok || !createJson.success || !createJson.data) {
@@ -561,7 +587,77 @@ export default function NewPostPage() {
           )}
         </section>
 
-        {/* ── Publish button ── */}
+        {/* ── Section 4: Brand Kit ── */}
+        <section className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6">
+          <h2 className="text-sm font-semibold text-zinc-400 uppercase tracking-wider mb-4">Marka Kimliği <span className="normal-case font-normal text-zinc-600 ml-1">(isteğe bağlı)</span></h2>
+
+          {/* Brand Kit Selector */}
+          <div className="mb-5">
+            <label className="block text-xs text-zinc-500 mb-2">Marka Seti</label>
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => setSelectedBrandKitId(null)}
+                className={`px-3 py-1.5 rounded-lg border text-xs font-medium transition ${
+                  selectedBrandKitId === null
+                    ? "border-zinc-500 bg-zinc-700 text-zinc-100"
+                    : "border-zinc-700 text-zinc-500 hover:border-zinc-500 hover:text-zinc-300"
+                }`}
+              >
+                Markasız
+              </button>
+              {brandKits.map((kit) => (
+                <button
+                  key={kit.id}
+                  onClick={() => setSelectedBrandKitId(kit.id)}
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-medium transition ${
+                    selectedBrandKitId === kit.id
+                      ? "border-indigo-500 bg-indigo-600/10 text-indigo-300"
+                      : "border-zinc-700 text-zinc-400 hover:border-zinc-500 hover:text-zinc-200"
+                  }`}
+                >
+                  <span
+                    className="w-3 h-3 rounded-full shrink-0"
+                    style={{ backgroundColor: kit.colors?.primary || "#4f46e5" }}
+                  />
+                  {kit.name}
+                </button>
+              ))}
+              {brandKits.length === 0 && (
+                <p className="text-xs text-zinc-600 italic">
+                  Henüz marka seti yok.{" "}
+                  <a href="/settings" className="text-indigo-400 underline">Ayarlar</a>&#8217;dan oluşturabilirsiniz.
+                </p>
+              )}
+            </div>
+          </div>
+
+          {/* Aspect Ratio Selector (only meaningful when brand kit is selected) */}
+          {selectedBrandKitId && (
+            <div>
+              <label className="block text-xs text-zinc-500 mb-2">En-Boy Oranı</label>
+              <div className="flex gap-2">
+                {(["1:1", "4:5", "9:16"] as AspectRatio[]).map((ratio) => (
+                  <button
+                    key={ratio}
+                    onClick={() => setSelectedAspectRatio(ratio)}
+                    className={`px-4 py-2 rounded-xl border text-xs font-semibold transition ${
+                      selectedAspectRatio === ratio
+                        ? "border-indigo-500 bg-indigo-600/10 text-indigo-300"
+                        : "border-zinc-700 text-zinc-500 hover:border-zinc-500 hover:text-zinc-300"
+                    }`}
+                  >
+                    {ratio === "1:1" && "1:1 Kare"}
+                    {ratio === "4:5" && "4:5 Portre"}
+                    {ratio === "9:16" && "9:16 Story"}
+                  </button>
+                ))}
+              </div>
+              <p className="text-xs text-zinc-600 mt-2">
+                Görsel yüklenirken seçili marka seti otomatik uygulanacak ve yayın markalı sürümü kullanacak.
+              </p>
+            </div>
+          )}
+        </section>
         <div className="flex items-center justify-between">
           <button
             onClick={() => router.back()}

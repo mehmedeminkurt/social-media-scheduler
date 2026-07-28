@@ -4,6 +4,7 @@ import { getServerSession } from "next-auth/next";
 
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { apiError, apiSuccess } from "@/lib/api-response-server";
+import { renderBrandedImage, type BrandKitData } from "@/lib/branding/engine";
 import { PostNotFoundError, requirePostForCompany } from "@/lib/posts/access";
 import { ImageValidationError, validateInstagramImage } from "@/lib/posts/image-validation";
 import { resolveUploadType } from "@/lib/posts/media-types";
@@ -23,6 +24,7 @@ async function createMediaAssetWithOrder(
   postId: string,
   type: string,
   originalUrl: string,
+  renderedUrl?: string | null,
 ): Promise<{ ok: true; asset: Awaited<ReturnType<typeof prisma.mediaAsset.create>> } | { ok: false; full: true }> {
   for (let attempt = 0; attempt <= MAX_ORDER_RETRIES; attempt++) {
     const count = await prisma.mediaAsset.count({ where: { postId } });
@@ -33,7 +35,7 @@ async function createMediaAssetWithOrder(
 
     try {
       const asset = await prisma.mediaAsset.create({
-        data: { postId, type, originalUrl, order: count },
+        data: { postId, type, originalUrl, renderedUrl: renderedUrl ?? null, order: count },
       });
       return { ok: true, asset };
     } catch (error) {
@@ -151,10 +153,41 @@ export async function POST(
       resolvedType.contentType,
     );
 
+    // Brand Kit rendering pipeline (images only — videos bypass)
+    let renderedUrl: string | null = null;
+    if (resolvedType.mediaType === "image") {
+      const post = await prisma.post.findUnique({
+        where: { id: postId },
+        select: { brandKitId: true, aspectRatio: true },
+      });
+
+      if (post?.brandKitId) {
+        const brandKitRecord = await prisma.brandKit.findUnique({
+          where: { id: post.brandKitId },
+        });
+
+        if (brandKitRecord) {
+          try {
+            const brandKit: BrandKitData = {
+              logoUrl: brandKitRecord.logoUrl,
+              colors: brandKitRecord.colors as Record<string, string>,
+              overlayConfig: brandKitRecord.overlayConfig as Record<string, unknown>,
+            };
+            const renderedBuffer = await renderBrandedImage(buffer, brandKit, post.aspectRatio);
+            renderedUrl = await uploadMedia(renderedBuffer, companyId, "jpg", "image/jpeg");
+          } catch (renderErr) {
+            // Non-fatal: log and fall back to originalUrl
+            console.error("Brand kit rendering failed, falling back to originalUrl:", renderErr);
+          }
+        }
+      }
+    }
+
     const created = await createMediaAssetWithOrder(
       postId,
       resolvedType.mediaType,
       originalUrl,
+      renderedUrl,
     );
 
     if (!created.ok) {

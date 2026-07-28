@@ -29,7 +29,7 @@ export async function POST(req: Request) {
       return validation.response;
     }
 
-    const { caption, platforms, scheduledAt } = validation.data;
+    const { caption, platforms, scheduledAt, brandKitId, aspectRatio } = validation.data;
 
     await requireCompanyAccess(userId, companyId);
 
@@ -51,6 +51,14 @@ export async function POST(req: Request) {
       );
     }
 
+    // Verify brandKitId belongs to this company if provided
+    if (brandKitId) {
+      const brandKit = await prisma.brandKit.findFirst({ where: { id: brandKitId, companyId } });
+      if (!brandKit) {
+        return apiError("Marka seti bulunamadı veya bu şirkete ait değil.", 404);
+      }
+    }
+
     const post = await prisma.post.create({
       data: {
         companyId,
@@ -58,6 +66,8 @@ export async function POST(req: Request) {
         caption,
         scheduledAt: scheduledAt ? new Date(scheduledAt) : null,
         status: PostStatus.DRAFT,
+        brandKitId: brandKitId ?? null,
+        aspectRatio: aspectRatio ?? null,
         targets: {
           create: platforms.map((platform) => ({
             platform,

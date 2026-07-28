@@ -17,6 +17,9 @@ export const createPostSchema = z.object({
       message: "Aynı platform birden fazla kez seçilemez.",
     }),
   scheduledAt: z.string().datetime({ offset: true }).optional().nullable(),
+  brandKitId: z.string().uuid().optional().nullable(),
+  aspectRatio: z.enum(["1:1", "4:5", "9:16"]).optional().nullable(),
 });
 
 export type CreatePostInput = z.infer<typeof createPostSchema>;
+
