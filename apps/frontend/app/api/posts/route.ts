@@ -59,19 +59,28 @@ export async function POST(req: Request) {
       }
     }
 
+    const parsedScheduledAt = scheduledAt ? new Date(scheduledAt) : null;
+    const initialStatus =
+      parsedScheduledAt && parsedScheduledAt.getTime() > Date.now()
+        ? PostStatus.SCHEDULED
+        : PostStatus.DRAFT;
+
     const post = await prisma.post.create({
       data: {
         companyId,
         authorId: userId,
         caption,
-        scheduledAt: scheduledAt ? new Date(scheduledAt) : null,
-        status: PostStatus.DRAFT,
+        scheduledAt: parsedScheduledAt,
+        status: initialStatus,
         brandKitId: brandKitId ?? null,
         aspectRatio: aspectRatio ?? null,
         targets: {
           create: platforms.map((platform) => ({
             platform,
-            status: PostStatus.DRAFT,
+            status:
+              initialStatus === PostStatus.SCHEDULED
+                ? PostStatus.SCHEDULED
+                : PostStatus.DRAFT,
           })),
         },
       },
@@ -124,6 +133,7 @@ export async function GET() {
       id: post.id,
       caption: post.caption,
       status: post.status,
+      scheduledAt: post.scheduledAt,
       createdAt: post.createdAt,
       mediaCount: post.mediaAssets.length,
       targets: post.targets.map((target) => ({

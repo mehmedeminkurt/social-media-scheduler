@@ -11,7 +11,9 @@
     "S3_SECRET_ACCESS_KEY",
     "S3_REGION",
     "S3_BUCKET_NAME",
-    "S3_PUBLIC_BASE_URL"
+    "S3_PUBLIC_BASE_URL",
+    "WORKER_POLL_INTERVAL_MS",
+    "WORKER_BATCH_SIZE"
   ],
   "ui": "tui",
   "tasks": {

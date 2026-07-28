@@ -49,9 +49,10 @@ interface Post {
 ────────────────────────────────────────────── */
 const STATUS_CONFIG: Record<string, { label: string; bg: string; text: string; dot: string }> = {
   DRAFT:      { label: "Taslak",      bg: "bg-zinc-800",    text: "text-zinc-300",  dot: "bg-zinc-500" },
-  SCHEDULED:  { label: "Zamanlandı", bg: "bg-blue-950/60",  text: "text-blue-300",  dot: "bg-blue-400" },
-  PUBLISHING: { label: "Yayınlanıyor", bg: "bg-amber-950/60", text: "text-amber-300", dot: "bg-amber-400" },
+  SCHEDULED:  { label: "Zamanlandı", bg: "bg-orange-950/60",  text: "text-orange-300",  dot: "bg-orange-400" },
+  PUBLISHING: { label: "Yayınlanıyor", bg: "bg-orange-950/60", text: "text-orange-300", dot: "bg-orange-400" },
   PUBLISHED:  { label: "Yayında",    bg: "bg-emerald-950/60", text: "text-emerald-300", dot: "bg-emerald-400" },
+  PARTIAL:    { label: "Kısmi",      bg: "bg-amber-950/60", text: "text-amber-300", dot: "bg-amber-400" },
   FAILED:     { label: "Başarısız",  bg: "bg-red-950/60",   text: "text-red-300",   dot: "bg-red-500" },
 };
 
@@ -117,9 +118,15 @@ export default function PostDetailPage() {
     fetchPost();
   }, [sessionStatus, fetchPost]);
 
-  /* polling while PUBLISHING */
+  /* polling while PUBLISHING or queued (SCHEDULED with due time) */
   useEffect(() => {
-    if (!post || post.status !== "PUBLISHING") return;
+    if (!post) return;
+    const isActive =
+      post.status === "PUBLISHING" ||
+      (post.status === "SCHEDULED" &&
+        post.scheduledAt &&
+        new Date(post.scheduledAt).getTime() <= Date.now());
+    if (!isActive) return;
     const interval = setInterval(fetchPost, 5000);
     return () => clearInterval(interval);
   }, [post, fetchPost]);
@@ -372,7 +379,7 @@ export default function PostDetailPage() {
             )}
 
             {/* Re-publish button */}
-            {post.status === "FAILED" && (
+            {(post.status === "FAILED" || post.status === "PARTIAL") && (
               <div className="mt-4">
                 {republishError && (
                   <p className="text-xs text-red-400 mb-2">{republishError}</p>

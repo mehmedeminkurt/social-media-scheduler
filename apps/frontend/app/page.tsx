@@ -21,10 +21,11 @@ interface PostSummary {
 /* Platform bazlı mini simgeler — duruma göre arka plan rengi değişir */
 const TARGET_STATUS_BG: Record<string, string> = {
   PUBLISHED: "bg-emerald-500/90 shadow-emerald-500/30",
+  PARTIAL: "bg-amber-500/90 shadow-amber-500/30",
   FAILED: "bg-rose-500/90 shadow-rose-500/30",
-  PUBLISHING: "bg-amber-500/90 shadow-amber-500/30 animate-pulse",
-  SCHEDULED: "bg-blue-500/70 shadow-blue-500/20",
-  DRAFT: "bg-zinc-600 shadow-none",
+  PUBLISHING: "bg-orange-500/90 shadow-orange-500/30 animate-pulse",
+  SCHEDULED: "bg-orange-500/70 shadow-orange-500/20",
+  DRAFT: "bg-orange-500/50 shadow-orange-500/10",
 };
 
 function TargetStatusIcon({ target }: { target: PostTargetSummary }) {
@@ -113,6 +114,12 @@ export default function DashboardPage() {
             <span className="text-sm text-zinc-400 hidden sm:inline-block font-medium">
               🏢 {companyName}
             </span>
+            <Link
+              href="/calendar"
+              className="text-sm text-zinc-300 hover:text-white transition-colors duration-200 font-medium"
+            >
+              Takvim
+            </Link>
             <Link
               href="/settings"
               className="text-sm text-zinc-300 hover:text-white transition-colors duration-200 font-medium"
@@ -246,11 +253,13 @@ export default function DashboardPage() {
                         <span className={`text-[9px] px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider border ${
                           post.status === "PUBLISHED"
                             ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                            : post.status === "PARTIAL"
+                            ? "bg-amber-500/10 text-amber-400 border-amber-500/20"
                             : post.status === "PUBLISHING"
-                            ? "bg-indigo-500/10 text-indigo-400 border-indigo-500/20 animate-pulse"
+                            ? "bg-orange-500/10 text-orange-400 border-orange-500/20 animate-pulse"
                             : post.status === "FAILED"
                             ? "bg-rose-500/10 text-rose-400 border-rose-500/20"
-                            : "bg-amber-500/10 text-amber-400 border-amber-500/20"
+                            : "bg-orange-500/10 text-orange-400 border-orange-500/20"
                         }`}>
                           {post.status}
                         </span>
@@ -325,7 +334,7 @@ export default function DashboardPage() {
                 <div>
                   <h3 className="text-sm font-bold text-zinc-200 mb-1">Paylaşımı Başlatın</h3>
                   <p className="text-xs text-zinc-400 leading-relaxed">
-                    Yayınla butonuna basarak anında ve arka planda güvenli polling akışı ile yayına girmesini sağlayın.
+                    Yayınla butonuna basın — gönderi anında kuyruğa alınır; worker arka planda güvenli Reels polling ile yayınlar.
                   </p>
                 </div>
               </div>

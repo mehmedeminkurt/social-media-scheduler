@@ -31,3 +31,10 @@ npx prisma db push
 cd ../..
 npm run dev
 ```
+
+In a second terminal, start the publish worker (required for scheduled and queued posts):
+```bash
+npm run dev:worker
+```
+
+The worker polls Postgres with `FOR UPDATE SKIP LOCKED` and publishes due posts in the background — including Reels polling that would timeout in a serverless API route.

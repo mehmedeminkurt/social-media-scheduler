@@ -4,6 +4,7 @@
 This repository is a Turborepo monorepo for a social media scheduling product.
 
 - apps/frontend: the main Next.js app with authentication, Prisma, and API routes.
+- apps/worker: long-running Node process that claims due posts from Postgres (SKIP LOCKED) and publishes them.
 - apps/admin-panel: the admin-facing Next.js app.
 - packages/ui: shared React components used across apps.
 

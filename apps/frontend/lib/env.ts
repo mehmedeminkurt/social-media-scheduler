@@ -43,6 +43,17 @@ const serverEnvSchema = z.object({
       (val) => !val.endsWith("/"),
       "S3_PUBLIC_BASE_URL must not end with a trailing slash.",
     ),
+  WORKER_POLL_INTERVAL_MS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(5000),
+  WORKER_BATCH_SIZE: z.coerce
+    .number()
+    .int()
+    .positive()
+    .max(100)
+    .default(10),
 });
 
 function validateServerEnv() {
@@ -56,6 +67,8 @@ function validateServerEnv() {
     S3_REGION: process.env.S3_REGION,
     S3_BUCKET_NAME: process.env.S3_BUCKET_NAME,
     S3_PUBLIC_BASE_URL: process.env.S3_PUBLIC_BASE_URL,
+    WORKER_POLL_INTERVAL_MS: process.env.WORKER_POLL_INTERVAL_MS,
+    WORKER_BATCH_SIZE: process.env.WORKER_BATCH_SIZE,
   });
 
   if (!result.success) {

@@ -28,6 +28,7 @@ interface BrandKit {
 
 type Step = "form" | "uploading" | "publishing" | "done" | "error";
 type AspectRatio = "1:1" | "4:5" | "9:16";
+type PublishMode = "now" | "scheduled";
 
 const InstagramIcon = () => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" className="text-pink-400">
@@ -54,6 +55,28 @@ const ACCEPTED_TYPES = ["image/jpeg", "image/png", "image/webp", "video/mp4", "v
 ────────────────────────────────────────────── */
 function generateLocalId() {
   return Math.random().toString(36).slice(2);
+}
+
+function defaultScheduledLocal(): string {
+  const d = new Date();
+  d.setMinutes(0, 0, 0);
+  d.setHours(d.getHours() + 1);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function localDatetimeToIso(local: string): string {
+  return new Date(local).toISOString();
+}
+
+function formatScheduledPreview(local: string): string {
+  return new Date(local).toLocaleString("tr-TR", {
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 /* ──────────────────────────────────────────────
@@ -85,6 +108,10 @@ export default function NewPostPage() {
   const [brandKits, setBrandKits] = useState<BrandKit[]>([]);
   const [selectedBrandKitId, setSelectedBrandKitId] = useState<string | null>(null);
   const [selectedAspectRatio, setSelectedAspectRatio] = useState<AspectRatio>("1:1");
+
+  /* scheduling */
+  const [publishMode, setPublishMode] = useState<PublishMode>("now");
+  const [scheduledAtLocal, setScheduledAtLocal] = useState(defaultScheduledLocal);
 
   /* load brand kits on mount */
   useEffect(() => {
@@ -215,11 +242,24 @@ export default function NewPostPage() {
     if (selectedPlatforms.length === 0) { setFileErrors(["En az bir platform seçin."]); return; }
     if (mediaItems.length === 0) { setFileErrors(["En az bir medya ekleyin."]); return; }
 
+    if (publishMode === "scheduled") {
+      if (!scheduledAtLocal) {
+        setFileErrors(["Planlama tarihi seçin."]);
+        return;
+      }
+      if (new Date(scheduledAtLocal).getTime() <= Date.now()) {
+        setFileErrors(["Planlanan tarih ve saat gelecekte olmalı."]);
+        return;
+      }
+    }
+
     setFileErrors([]);
     setErrorMessage("");
 
+    const isScheduled = publishMode === "scheduled";
+
     try {
-      /* Step 1 – create post (DRAFT) */
+      /* Step 1 – create post */
       setStep("uploading");
       const createRes = await fetch("/api/posts", {
         method: "POST",
@@ -229,6 +269,7 @@ export default function NewPostPage() {
           platforms: selectedPlatforms,
           brandKitId: selectedBrandKitId ?? undefined,
           aspectRatio: selectedAspectRatio,
+          ...(isScheduled ? { scheduledAt: localDatetimeToIso(scheduledAtLocal) } : {}),
         }),
       });
       const createJson = await createRes.json() as { success: boolean; data?: { id: string }; error?: string };
@@ -256,15 +297,25 @@ export default function NewPostPage() {
         setUploadProgress((prev) => ({ ...prev, done: prev.done + 1 }));
       }
 
-      /* Step 3 – publish */
-      setStep("publishing");
-      const publishRes = await fetch(`/api/posts/${postId}/publish`, { method: "POST" });
-      const publishJson = await publishRes.json() as { success: boolean; error?: string };
-      if (!publishRes.ok || !publishJson.success) {
-        throw new Error(publishJson.error ?? "Yayın başarısız oldu.");
+      if (isScheduled) {
+        setStep("done");
+        router.push("/calendar");
+        return;
       }
 
-      /* Done — navigate to detail */
+      /* Step 3 – queue for background publish */
+      setStep("publishing");
+      const publishRes = await fetch(`/api/posts/${postId}/publish`, { method: "POST" });
+      const publishJson = await publishRes.json() as {
+        success: boolean;
+        data?: { queued?: boolean };
+        error?: string;
+      };
+      if (!publishRes.ok || !publishJson.success) {
+        throw new Error(publishJson.error ?? "Yayın kuyruğa alınamadı.");
+      }
+
+      /* Done — worker handles Reels polling; navigate to detail */
       setStep("done");
       router.push(`/posts/${postId}`);
     } catch (err: unknown) {
@@ -291,9 +342,11 @@ export default function NewPostPage() {
   if (step === "uploading" || step === "publishing" || step === "done") {
     const label =
       step === "done"
-        ? "Yönlendiriliyor…"
+        ? publishMode === "scheduled"
+          ? "Takvime yönlendiriliyor…"
+          : "Yönlendiriliyor…"
         : step === "publishing"
-          ? "Yayınlanıyor…"
+          ? "Kuyruğa alınıyor…"
           : `Medya yükleniyor… ${uploadProgress.done}/${uploadProgress.total}`;
 
     return (
@@ -587,7 +640,80 @@ export default function NewPostPage() {
           )}
         </section>
 
-        {/* ── Section 4: Brand Kit ── */}
+        {/* ── Section 4: Schedule ── */}
+        <section className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6">
+          <h2 className="text-sm font-semibold text-zinc-400 uppercase tracking-wider mb-4">
+            Yayın Zamanı
+          </h2>
+
+          <div className="flex flex-wrap gap-3 mb-5">
+            <button
+              type="button"
+              onClick={() => setPublishMode("now")}
+              className={`flex items-center gap-2 px-5 py-3 rounded-xl border text-sm font-medium transition-all duration-200 ${
+                publishMode === "now"
+                  ? "bg-indigo-600 border-indigo-500 text-white shadow-lg shadow-indigo-900/40"
+                  : "bg-zinc-800 border-zinc-700 text-zinc-400 hover:border-zinc-500 hover:text-zinc-200"
+              }`}
+            >
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <path d="M13.5 2.5L7 9M13.5 2.5H9.5M13.5 2.5V6.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              Hemen yayınla
+            </button>
+            <button
+              type="button"
+              onClick={() => setPublishMode("scheduled")}
+              className={`flex items-center gap-2 px-5 py-3 rounded-xl border text-sm font-medium transition-all duration-200 ${
+                publishMode === "scheduled"
+                  ? "bg-orange-600 border-orange-500 text-white shadow-lg shadow-orange-900/40"
+                  : "bg-zinc-800 border-zinc-700 text-zinc-400 hover:border-zinc-500 hover:text-zinc-200"
+              }`}
+            >
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <rect x="2" y="3" width="12" height="11" rx="1.5" stroke="currentColor" strokeWidth="1.4" />
+                <path d="M2 6.5h12M5.5 1.5V4M10.5 1.5V4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+              </svg>
+              İleri tarihe planla
+            </button>
+          </div>
+
+          {publishMode === "now" ? (
+            <p className="text-xs text-zinc-500 leading-relaxed">
+              Gönderi kaydedildikten sonra kuyruğua alınır ve arka planda yayınlanır
+              (Reels dahil).
+            </p>
+          ) : (
+            <div className="space-y-4">
+              <div>
+                <label htmlFor="scheduled-at" className="block text-xs text-zinc-500 mb-2">
+                  Tarih ve saat
+                </label>
+                <input
+                  id="scheduled-at"
+                  type="datetime-local"
+                  value={scheduledAtLocal}
+                  min={defaultScheduledLocal().slice(0, 16)}
+                  onChange={(e) => setScheduledAtLocal(e.target.value)}
+                  className="w-full sm:w-auto min-w-[220px] bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3 text-sm text-zinc-100 focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500/30 transition-colors [color-scheme:dark]"
+                />
+              </div>
+              <div className="flex items-start gap-2.5 rounded-xl border border-orange-500/25 bg-orange-500/10 px-4 py-3">
+                <span className="text-orange-400 mt-0.5">🕐</span>
+                <div>
+                  <p className="text-sm font-medium text-orange-200">
+                    {formatScheduledPreview(scheduledAtLocal)}
+                  </p>
+                  <p className="text-xs text-orange-300/70 mt-1">
+                    Gönderiniz belirlenen saatte otomatik yayınlayacak. Takvimden takip edebilirsiniz.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+        </section>
+
+        {/* ── Section 5: Brand Kit ── */}
         <section className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6">
           <h2 className="text-sm font-semibold text-zinc-400 uppercase tracking-wider mb-4">Marka Kimliği <span className="normal-case font-normal text-zinc-600 ml-1">(isteğe bağlı)</span></h2>
 
@@ -670,13 +796,29 @@ export default function NewPostPage() {
             id="publish-button"
             onClick={handlePublish}
             disabled={step !== "form" && step !== "error"}
-            className="flex items-center gap-2.5 px-6 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:bg-zinc-700 disabled:cursor-not-allowed text-white font-semibold text-sm transition-all duration-200 shadow-lg shadow-indigo-900/30 hover:shadow-indigo-800/50"
+            className={`flex items-center gap-2.5 px-6 py-3 rounded-xl disabled:bg-zinc-700 disabled:cursor-not-allowed text-white font-semibold text-sm transition-all duration-200 shadow-lg ${
+              publishMode === "scheduled"
+                ? "bg-orange-600 hover:bg-orange-500 shadow-orange-900/30 hover:shadow-orange-800/50"
+                : "bg-indigo-600 hover:bg-indigo-500 shadow-indigo-900/30 hover:shadow-indigo-800/50"
+            }`}
           >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-              <path d="M13.5 2.5L7 9M13.5 2.5H9.5M13.5 2.5V6.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-              <path d="M6.5 3.5H3a1 1 0 00-1 1v8a1 1 0 001 1h8a1 1 0 001-1V9" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-            Yayınla
+            {publishMode === "scheduled" ? (
+              <>
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                  <rect x="2" y="3" width="12" height="11" rx="1.5" stroke="currentColor" strokeWidth="1.4" />
+                  <path d="M2 6.5h12M5.5 1.5V4M10.5 1.5V4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+                </svg>
+                Zamanla
+              </>
+            ) : (
+              <>
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                  <path d="M13.5 2.5L7 9M13.5 2.5H9.5M13.5 2.5V6.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                  <path d="M6.5 3.5H3a1 1 0 00-1 1v8a1 1 0 001 1h8a1 1 0 001-1V9" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+                Yayınla
+              </>
+            )}
           </button>
         </div>
       </main>

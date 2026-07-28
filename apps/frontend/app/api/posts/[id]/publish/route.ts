@@ -1,9 +1,10 @@
+import { PostStatus } from "@prisma/client";
 import { getServerSession } from "next-auth/next";
 
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { apiError, apiSuccess } from "@/lib/api-response-server";
 import { PostNotFoundError, requirePostForCompany } from "@/lib/posts/access";
-import { AlreadyPublishingError, publishPostToTargets } from "@/lib/posts/publish-post";
+import { enqueuePostForPublish } from "@/lib/posts/queue";
 import { prisma } from "@/lib/prisma";
 import { TenantAccessError } from "@/lib/tenant";
 
@@ -45,16 +46,17 @@ export async function POST(
       return apiError("Yayınlamak için en az bir medya yükleyin.", 400);
     }
 
-    // The double-publish guard now lives inside publishPostToTargets as an
-    // atomic claim; a concurrent/duplicate call throws AlreadyPublishingError.
-    let result;
-    try {
-      result = await publishPostToTargets(postId);
-    } catch (error) {
-      if (error instanceof AlreadyPublishingError) {
-        return apiError(error.message, 409);
-      }
-      throw error;
+    if (post.status === PostStatus.PUBLISHING) {
+      return apiError("Gönderi zaten yayınlanıyor.", 409);
+    }
+
+    if (post.status === PostStatus.PUBLISHED) {
+      return apiError("Gönderi zaten yayınlandı.", 409);
+    }
+
+    const queued = await enqueuePostForPublish(postId);
+    if (!queued) {
+      return apiError("Gönderi kuyruğa alınamadı.", 409);
     }
 
     const updatedPost = await prisma.post.findUniqueOrThrow({
@@ -70,8 +72,8 @@ export async function POST(
     });
 
     return apiSuccess({
+      queued: true,
       post: updatedPost,
-      publishResult: result,
     });
   } catch (error: unknown) {
     if (error instanceof TenantAccessError) {
@@ -81,6 +83,6 @@ export async function POST(
       return apiError(error.message, 404);
     }
     console.error("POST /api/posts/[id]/publish error:", error);
-    return apiError("Gönderi yayınlanırken bir hata oluştu.", 500);
+    return apiError("Gönderi kuyruğa alınırken bir hata oluştu.", 500);
   }
 }
