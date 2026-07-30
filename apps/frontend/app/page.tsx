@@ -26,6 +26,7 @@ const TARGET_STATUS_BG: Record<string, string> = {
   PUBLISHING: "bg-orange-500/90 shadow-orange-500/30 animate-pulse",
   SCHEDULED: "bg-orange-500/70 shadow-orange-500/20",
   DRAFT: "bg-orange-500/50 shadow-orange-500/10",
+  PENDING_APPROVAL: "bg-violet-500/70 shadow-violet-500/20",
 };
 
 function TargetStatusIcon({ target }: { target: PostTargetSummary }) {
@@ -259,6 +260,8 @@ export default function DashboardPage() {
                             ? "bg-orange-500/10 text-orange-400 border-orange-500/20 animate-pulse"
                             : post.status === "FAILED"
                             ? "bg-rose-500/10 text-rose-400 border-rose-500/20"
+                            : post.status === "PENDING_APPROVAL"
+                            ? "bg-violet-500/10 text-violet-400 border-violet-500/20"
                             : "bg-orange-500/10 text-orange-400 border-orange-500/20"
                         }`}>
                           {post.status}

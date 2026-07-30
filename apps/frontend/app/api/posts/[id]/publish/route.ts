@@ -6,6 +6,7 @@ import { apiError, apiSuccess } from "@/lib/api-response-server";
 import { PostNotFoundError, requirePostForCompany } from "@/lib/posts/access";
 import { enqueuePostForPublish } from "@/lib/posts/queue";
 import { prisma } from "@/lib/prisma";
+import { requireCompanyAdminAccess, RoleAccessError } from "@/lib/roles";
 import { TenantAccessError } from "@/lib/tenant";
 
 export async function POST(
@@ -27,6 +28,7 @@ export async function POST(
       return apiError("Aktif şirket bulunamadı.", 400);
     }
 
+    await requireCompanyAdminAccess(userId, companyId);
     await requirePostForCompany(userId, companyId, postId);
 
     const post = await prisma.post.findUnique({
@@ -54,6 +56,10 @@ export async function POST(
       return apiError("Gönderi zaten yayınlandı.", 409);
     }
 
+    if (post.status === PostStatus.PENDING_APPROVAL) {
+      return apiError("Onay bekleyen gönderiler doğrudan yayınlanamaz. Önce onaylayın.", 409);
+    }
+
     const queued = await enqueuePostForPublish(postId);
     if (!queued) {
       return apiError("Gönderi kuyruğa alınamadı.", 409);
@@ -77,6 +83,9 @@ export async function POST(
     });
   } catch (error: unknown) {
     if (error instanceof TenantAccessError) {
+      return apiError(error.message, 403);
+    }
+    if (error instanceof RoleAccessError) {
       return apiError(error.message, 403);
     }
     if (error instanceof PostNotFoundError) {

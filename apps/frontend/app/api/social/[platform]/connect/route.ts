@@ -6,7 +6,8 @@ import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { apiError } from "@/lib/api-response-server";
 import { META_OAUTH_DIALOG_URL } from "@/lib/meta/graph-api";
 import { prisma } from "@/lib/prisma";
-import { requireCompanyAccess, TenantAccessError } from "@/lib/tenant";
+import { requireCompanyAdminAccess, RoleAccessError } from "@/lib/roles";
+import { TenantAccessError } from "@/lib/tenant";
 
 type Platform = "instagram" | "linkedin";
 
@@ -50,8 +51,8 @@ export async function GET(
       return apiError("Aktif şirket bulunamadı.", 400);
     }
 
-    // Firma erişim kontrolü
-    await requireCompanyAccess(userId, companyId);
+    // Firma erişim + yönetici rolü
+    await requireCompanyAdminAccess(userId, companyId);
 
     // Platform için uygulama kimlik bilgileri kontrolü
     const appConfig = await prisma.socialAppConfig.findUnique({
@@ -99,6 +100,9 @@ export async function GET(
     return response;
   } catch (error: unknown) {
     if (error instanceof TenantAccessError) {
+      return apiError(error.message, 403);
+    }
+    if (error instanceof RoleAccessError) {
       return apiError(error.message, 403);
     }
     console.error("OAuth connect hatası:", error);

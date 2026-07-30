@@ -60,6 +60,7 @@ const TARGET_DOT: Record<string, string> = {
   PUBLISHING: "bg-orange-400 animate-pulse",
   SCHEDULED: "bg-orange-400",
   DRAFT: "bg-orange-300",
+  PENDING_APPROVAL: "bg-violet-400",
   PARTIAL: "bg-amber-400",
 };
 

@@ -10,7 +10,8 @@ import {
 } from "@/lib/linkedin/api";
 import { META_GRAPH_API_BASE } from "@/lib/meta/graph-api";
 import { prisma } from "@/lib/prisma";
-import { requireCompanyAccess, TenantAccessError } from "@/lib/tenant";
+import { requireCompanyAdminAccess, RoleAccessError } from "@/lib/roles";
+import { TenantAccessError } from "@/lib/tenant";
 
 type Platform = "instagram" | "linkedin";
 
@@ -327,7 +328,7 @@ export async function GET(
       return redirectError("Şirket kimliği eşleşmiyor. Lütfen tekrar deneyin.");
     }
 
-    await requireCompanyAccess(userId, companyId);
+    await requireCompanyAdminAccess(userId, companyId);
 
     // ── Platform App Konfigürasyonu ───────────────────────────────────────────
     const appConfig = await prisma.socialAppConfig.findUnique({
@@ -367,6 +368,9 @@ export async function GET(
     return successRes;
   } catch (error: unknown) {
     if (error instanceof TenantAccessError) {
+      return redirectError(error.message);
+    }
+    if (error instanceof RoleAccessError) {
       return redirectError(error.message);
     }
 

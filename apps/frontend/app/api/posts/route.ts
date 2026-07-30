@@ -5,6 +5,7 @@ import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { apiError, apiSuccess } from "@/lib/api-response-server";
 import { createPostSchema } from "@/lib/posts/schemas";
 import { prisma } from "@/lib/prisma";
+import { isAdminRole } from "@/lib/roles";
 import { requireCompanyAccess, TenantAccessError } from "@/lib/tenant";
 import { validateBody } from "@/lib/validate-request";
 
@@ -60,10 +61,14 @@ export async function POST(req: Request) {
     }
 
     const parsedScheduledAt = scheduledAt ? new Date(scheduledAt) : null;
-    const initialStatus =
-      parsedScheduledAt && parsedScheduledAt.getTime() > Date.now()
-        ? PostStatus.SCHEDULED
-        : PostStatus.DRAFT;
+    const canScheduleDirectly =
+      isAdminRole(session.user.role) &&
+      parsedScheduledAt &&
+      parsedScheduledAt.getTime() > Date.now();
+
+    const initialStatus = canScheduleDirectly
+      ? PostStatus.SCHEDULED
+      : PostStatus.DRAFT;
 
     const post = await prisma.post.create({
       data: {

@@ -4,6 +4,8 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
 
+import { isAdminRole } from "@/lib/role-utils";
+
 /* ──────────────────────────────────────────────
    Types
 ────────────────────────────────────────────── */
@@ -26,7 +28,7 @@ interface BrandKit {
   colors: Record<string, string>;
 }
 
-type Step = "form" | "uploading" | "publishing" | "done" | "error";
+type Step = "form" | "uploading" | "publishing" | "submitting" | "done" | "error";
 type AspectRatio = "1:1" | "4:5" | "9:16";
 type PublishMode = "now" | "scheduled";
 
@@ -83,8 +85,9 @@ function formatScheduledPreview(local: string): string {
    Page
 ────────────────────────────────────────────── */
 export default function NewPostPage() {
-  const { status } = useSession({ required: true });
+  const { status, data: session } = useSession({ required: true });
   const router = useRouter();
+  const isAdmin = isAdminRole(session?.user?.role);
 
   /* form state */
   const [caption, setCaption] = useState("");
@@ -112,6 +115,11 @@ export default function NewPostPage() {
   /* scheduling */
   const [publishMode, setPublishMode] = useState<PublishMode>("now");
   const [scheduledAtLocal, setScheduledAtLocal] = useState(defaultScheduledLocal);
+
+  /* AI caption */
+  const [aiTopic, setAiTopic] = useState("");
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState("");
 
   /* load brand kits on mount */
   useEffect(() => {
@@ -236,6 +244,54 @@ export default function NewPostPage() {
     });
   }
 
+  async function handleAiSuggest() {
+    if (selectedPlatforms.length === 0) {
+      setAiError("AI önerisi için en az bir platform seçin.");
+      return;
+    }
+
+    setAiLoading(true);
+    setAiError("");
+
+    try {
+      const mediaHint = mediaItems.length > 0
+        ? mediaItems.map((item) => item.name).join(", ")
+        : undefined;
+
+      const res = await fetch("/api/ai/caption-suggest", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          topic: aiTopic.trim() || caption.trim() || undefined,
+          platforms: selectedPlatforms,
+          brandKitId: selectedBrandKitId ?? undefined,
+          mediaHint,
+        }),
+      });
+
+      const json = await res.json() as {
+        success: boolean;
+        data?: { caption: string; hashtags: string[] };
+        error?: string;
+      };
+
+      if (!res.ok || !json.success || !json.data) {
+        throw new Error(json.error ?? "AI önerisi alınamadı.");
+      }
+
+      const hashtagLine = json.data.hashtags.join(" ");
+      const suggested = hashtagLine
+        ? `${json.data.caption}\n\n${hashtagLine}`
+        : json.data.caption;
+
+      setCaption(suggested.slice(0, MAX_CAPTION));
+    } catch (err: unknown) {
+      setAiError(err instanceof Error ? err.message : "AI önerisi alınamadı.");
+    } finally {
+      setAiLoading(false);
+    }
+  }
+
   /* ── main publish flow ── */
   async function handlePublish() {
     if (!caption.trim()) { setFileErrors(["Caption boş olamaz."]); return; }
@@ -257,6 +313,7 @@ export default function NewPostPage() {
     setErrorMessage("");
 
     const isScheduled = publishMode === "scheduled";
+    const memberSubmitFlow = !isAdmin;
 
     try {
       /* Step 1 – create post */
@@ -295,6 +352,18 @@ export default function NewPostPage() {
         }
         uploadedIds.push(uploadJson.data.id);
         setUploadProgress((prev) => ({ ...prev, done: prev.done + 1 }));
+      }
+
+      if (memberSubmitFlow) {
+        setStep("submitting");
+        const submitRes = await fetch(`/api/posts/${postId}/submit-approval`, { method: "POST" });
+        const submitJson = await submitRes.json() as { success: boolean; error?: string };
+        if (!submitRes.ok || !submitJson.success) {
+          throw new Error(submitJson.error ?? "Gönderi onaya gönderilemedi.");
+        }
+        setStep("done");
+        router.push(`/posts/${postId}`);
+        return;
       }
 
       if (isScheduled) {
@@ -339,12 +408,14 @@ export default function NewPostPage() {
   /* ──────────────────────────────────────────────
      Progress overlay
   ────────────────────────────────────────────── */
-  if (step === "uploading" || step === "publishing" || step === "done") {
+  if (step === "uploading" || step === "publishing" || step === "submitting" || step === "done") {
     const label =
       step === "done"
-        ? publishMode === "scheduled"
+        ? publishMode === "scheduled" && isAdmin
           ? "Takvime yönlendiriliyor…"
           : "Yönlendiriliyor…"
+        : step === "submitting"
+          ? "Onaya gönderiliyor…"
         : step === "publishing"
           ? "Kuyruğa alınıyor…"
           : `Medya yükleniyor… ${uploadProgress.done}/${uploadProgress.total}`;
@@ -623,10 +694,43 @@ export default function NewPostPage() {
         <section className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-sm font-semibold text-zinc-400 uppercase tracking-wider">Açıklama</h2>
-            <span className={`text-xs tabular-nums ${caption.length > MAX_CAPTION * 0.9 ? "text-amber-400" : "text-zinc-500"}`}>
-              {caption.length} / {MAX_CAPTION}
-            </span>
+            <div className="flex items-center gap-3">
+              <span className={`text-xs tabular-nums ${caption.length > MAX_CAPTION * 0.9 ? "text-amber-400" : "text-zinc-500"}`}>
+                {caption.length} / {MAX_CAPTION}
+              </span>
+              <button
+                type="button"
+                onClick={handleAiSuggest}
+                disabled={aiLoading || selectedPlatforms.length === 0}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-violet-700/60 bg-violet-950/40 text-violet-300 text-xs font-medium hover:bg-violet-900/40 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+              >
+                {aiLoading ? (
+                  <>
+                    <div className="w-3 h-3 border-2 border-violet-400 border-t-transparent rounded-full animate-spin" />
+                    Öneriliyor…
+                  </>
+                ) : (
+                  <>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                      <path d="M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5L12 3z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+                      <path d="M5 19l1 3 1-3 3-1-3-1-1-3-1 3-3 1 3 1 1 3z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" opacity="0.7" />
+                    </svg>
+                    AI Öner
+                  </>
+                )}
+              </button>
+            </div>
           </div>
+          <input
+            type="text"
+            value={aiTopic}
+            onChange={(e) => setAiTopic(e.target.value.slice(0, 200))}
+            placeholder="AI için konu ipucu (isteğe bağlı) — örn. yaz koleksiyonu lansmanı"
+            className="w-full mb-3 bg-zinc-800/60 border border-zinc-700/80 rounded-xl px-4 py-2.5 text-sm text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:border-violet-500/50 focus:ring-1 focus:ring-violet-500/20 transition-colors"
+          />
+          {aiError && (
+            <p className="text-xs text-red-400 mb-3">{aiError}</p>
+          )}
           <textarea
             id="caption-input"
             value={caption}
@@ -680,8 +784,9 @@ export default function NewPostPage() {
 
           {publishMode === "now" ? (
             <p className="text-xs text-zinc-500 leading-relaxed">
-              Gönderi kaydedildikten sonra kuyruğua alınır ve arka planda yayınlanır
-              (Reels dahil).
+              {isAdmin
+                ? "Gönderi kaydedildikten sonra kuyruğa alınır ve arka planda yayınlanır (Reels dahil)."
+                : "Gönderi onaya gönderilir; yönetici onayından sonra yayınlanır."}
             </p>
           ) : (
             <div className="space-y-4">
@@ -705,7 +810,9 @@ export default function NewPostPage() {
                     {formatScheduledPreview(scheduledAtLocal)}
                   </p>
                   <p className="text-xs text-orange-300/70 mt-1">
-                    Gönderiniz belirlenen saatte otomatik yayınlayacak. Takvimden takip edebilirsiniz.
+                    {isAdmin
+                      ? "Gönderiniz belirlenen saatte otomatik yayınlanacak. Takvimden takip edebilirsiniz."
+                      : "Tercih ettiğiniz yayın zamanı yöneticiye iletilecek; onay sonrası planlanacak."}
                   </p>
                 </div>
               </div>
@@ -797,12 +904,21 @@ export default function NewPostPage() {
             onClick={handlePublish}
             disabled={step !== "form" && step !== "error"}
             className={`flex items-center gap-2.5 px-6 py-3 rounded-xl disabled:bg-zinc-700 disabled:cursor-not-allowed text-white font-semibold text-sm transition-all duration-200 shadow-lg ${
-              publishMode === "scheduled"
+              !isAdmin
+                ? "bg-violet-600 hover:bg-violet-500 shadow-violet-900/30 hover:shadow-violet-800/50"
+                : publishMode === "scheduled"
                 ? "bg-orange-600 hover:bg-orange-500 shadow-orange-900/30 hover:shadow-orange-800/50"
                 : "bg-indigo-600 hover:bg-indigo-500 shadow-indigo-900/30 hover:shadow-indigo-800/50"
             }`}
           >
-            {publishMode === "scheduled" ? (
+            {!isAdmin ? (
+              <>
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                  <path d="M8 2v8M5 7l3 3 3-3M3 13h10" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+                Onaya Gönder
+              </>
+            ) : publishMode === "scheduled" ? (
               <>
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
                   <rect x="2" y="3" width="12" height="11" rx="1.5" stroke="currentColor" strokeWidth="1.4" />

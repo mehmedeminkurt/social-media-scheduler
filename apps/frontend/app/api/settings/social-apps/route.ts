@@ -5,6 +5,7 @@ import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { apiError, apiSuccess } from "@/lib/api-response-server";
 import { encrypt } from "@/lib/crypto";
 import { prisma } from "@/lib/prisma";
+import { requireCompanyAdminAccess, RoleAccessError } from "@/lib/roles";
 import { requireCompanyAccess, TenantAccessError } from "@/lib/tenant";
 import { validateBody } from "@/lib/validate-request";
 
@@ -78,8 +79,7 @@ export async function POST(req: Request) {
 
     const { platform, clientId, clientSecret } = validation.data;
 
-    // Yetki Kontrolü
-    await requireCompanyAccess(userId, companyId);
+    await requireCompanyAdminAccess(userId, companyId);
 
     const existing = await prisma.socialAppConfig.findUnique({
       where: {
@@ -139,6 +139,9 @@ export async function POST(req: Request) {
     });
   } catch (error: unknown) {
     if (error instanceof TenantAccessError) {
+      return apiError(error.message, 403);
+    }
+    if (error instanceof RoleAccessError) {
       return apiError(error.message, 403);
     }
     console.error("POST social-apps settings error:", error);

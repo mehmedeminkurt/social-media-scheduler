@@ -13,7 +13,9 @@
     "S3_BUCKET_NAME",
     "S3_PUBLIC_BASE_URL",
     "WORKER_POLL_INTERVAL_MS",
-    "WORKER_BATCH_SIZE"
+    "WORKER_BATCH_SIZE",
+    "ANTHROPIC_API_KEY",
+    "ANTHROPIC_MODEL"
   ],
   "ui": "tui",
   "tasks": {

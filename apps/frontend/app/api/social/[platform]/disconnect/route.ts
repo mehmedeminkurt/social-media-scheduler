@@ -4,7 +4,8 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { apiError, apiSuccess } from "@/lib/api-response-server";
 import { prisma } from "@/lib/prisma";
-import { requireCompanyAccess, TenantAccessError } from "@/lib/tenant";
+import { requireCompanyAdminAccess, RoleAccessError } from "@/lib/roles";
+import { TenantAccessError } from "@/lib/tenant";
 
 type Platform = "instagram" | "linkedin";
 
@@ -35,8 +36,7 @@ export async function POST(
       return apiError("Aktif şirket bulunamadı.", 400);
     }
 
-    // Yetki Kontrolü
-    await requireCompanyAccess(userId, companyId);
+    await requireCompanyAdminAccess(userId, companyId);
 
     // SocialAccount kaydını sil
     const deleteResult = await prisma.socialAccount.deleteMany({
@@ -53,6 +53,9 @@ export async function POST(
     return apiSuccess({ message: "Bağlantı başarıyla kesildi." });
   } catch (error: unknown) {
     if (error instanceof TenantAccessError) {
+      return apiError(error.message, 403);
+    }
+    if (error instanceof RoleAccessError) {
       return apiError(error.message, 403);
     }
     console.error("Disconnect error:", error);

@@ -15,6 +15,7 @@ enum MembershipRole {
 
 enum PostStatus {
   DRAFT
+  PENDING_APPROVAL
   SCHEDULED
   PUBLISHING
   PUBLISHED
@@ -44,8 +45,9 @@ model User {
   resetTokenExp DateTime?
   createdAt     DateTime  @default(now())
 
-  memberships Membership[]
-  posts       Post[]
+  memberships      Membership[]
+  posts            Post[]
+  approvedPosts    Post[] @relation("PostApprover")
 }
 
 model Membership {
@@ -79,19 +81,23 @@ model SocialAccount {
 }
 
 model Post {
-  id          String       @id @default(uuid())
-  companyId   String
-  authorId    String
-  caption     String
-  scheduledAt DateTime?
-  status      PostStatus   @default(DRAFT)
-  brandKitId  String?
-  aspectRatio String?      // e.g. "1:1", "4:5", "9:16"
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
+  id                    String       @id @default(uuid())
+  companyId             String
+  authorId              String
+  caption               String
+  scheduledAt           DateTime?
+  status                PostStatus   @default(DRAFT)
+  brandKitId            String?
+  aspectRatio           String?      // e.g. "1:1", "4:5", "9:16"
+  submittedForApprovalAt DateTime?
+  approvedById          String?
+  approvedAt            DateTime?
+  createdAt             DateTime     @default(now())
+  updatedAt             DateTime     @updatedAt
 
   company     Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
   author      User         @relation(fields: [authorId], references: [id])
+  approvedBy  User?        @relation("PostApprover", fields: [approvedById], references: [id], onDelete: SetNull)
   brandKit    BrandKit?    @relation(fields: [brandKitId], references: [id], onDelete: SetNull)
   targets     PostTarget[]
   mediaAssets MediaAsset[]

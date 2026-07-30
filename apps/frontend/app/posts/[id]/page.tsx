@@ -4,6 +4,8 @@ import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 
+import { isAdminRole } from "@/lib/role-utils";
+
 /* ──────────────────────────────────────────────
    Types (mirroring Prisma shapes)
 ────────────────────────────────────────────── */
@@ -37,6 +39,8 @@ interface Post {
   caption: string;
   status: string;
   scheduledAt: string | null;
+  submittedForApprovalAt: string | null;
+  approvedAt: string | null;
   createdAt: string;
   updatedAt: string;
   targets: PostTarget[];
@@ -49,6 +53,7 @@ interface Post {
 ────────────────────────────────────────────── */
 const STATUS_CONFIG: Record<string, { label: string; bg: string; text: string; dot: string }> = {
   DRAFT:      { label: "Taslak",      bg: "bg-zinc-800",    text: "text-zinc-300",  dot: "bg-zinc-500" },
+  PENDING_APPROVAL: { label: "Onay Bekliyor", bg: "bg-violet-950/60", text: "text-violet-300", dot: "bg-violet-400 animate-pulse" },
   SCHEDULED:  { label: "Zamanlandı", bg: "bg-orange-950/60",  text: "text-orange-300",  dot: "bg-orange-400" },
   PUBLISHING: { label: "Yayınlanıyor", bg: "bg-orange-950/60", text: "text-orange-300", dot: "bg-orange-400" },
   PUBLISHED:  { label: "Yayında",    bg: "bg-emerald-950/60", text: "text-emerald-300", dot: "bg-emerald-400" },
@@ -79,20 +84,36 @@ function formatDate(iso: string) {
   });
 }
 
+function defaultScheduledLocal(): string {
+  const d = new Date();
+  d.setMinutes(0, 0, 0);
+  d.setHours(d.getHours() + 1);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function localDatetimeToIso(local: string): string {
+  return new Date(local).toISOString();
+}
+
 /* ──────────────────────────────────────────────
    Page
 ────────────────────────────────────────────── */
 export default function PostDetailPage() {
-  const { status: sessionStatus } = useSession({ required: true });
+  const { status: sessionStatus, data: session } = useSession({ required: true });
   const router = useRouter();
   const params = useParams<{ id: string }>();
   const postId = params.id;
+  const isAdmin = isAdminRole(session?.user?.role);
 
   const [post, setPost] = useState<Post | null>(null);
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState("");
   const [republishing, setRepublishing] = useState(false);
   const [republishError, setRepublishError] = useState("");
+  const [approving, setApproving] = useState(false);
+  const [approveError, setApproveError] = useState("");
+  const [approveScheduleLocal, setApproveScheduleLocal] = useState(defaultScheduledLocal);
   const [selectedMediaIndex, setSelectedMediaIndex] = useState(0);
 
   /* ── fetch post data ── */
@@ -145,6 +166,46 @@ export default function PostDetailPage() {
       setRepublishError(err instanceof Error ? err.message : "Yayın başarısız.");
     } finally {
       setRepublishing(false);
+    }
+  }
+
+  async function handleApprove(action: "publish" | "schedule") {
+    if (!post) return;
+    setApproving(true);
+    setApproveError("");
+
+    try {
+      const body =
+        action === "schedule"
+          ? {
+              action,
+              scheduledAt: post.scheduledAt
+                ? post.scheduledAt
+                : localDatetimeToIso(approveScheduleLocal),
+            }
+          : { action };
+
+      if (action === "schedule" && !post.scheduledAt) {
+        const scheduledTime = new Date(approveScheduleLocal).getTime();
+        if (scheduledTime <= Date.now()) {
+          throw new Error("Planlanan tarih ve saat gelecekte olmalı.");
+        }
+      }
+
+      const res = await fetch(`/api/posts/${postId}/approve`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const json = await res.json() as { success: boolean; error?: string };
+      if (!res.ok || !json.success) {
+        throw new Error(json.error ?? "Onay işlemi başarısız.");
+      }
+      await fetchPost();
+    } catch (err: unknown) {
+      setApproveError(err instanceof Error ? err.message : "Onay işlemi başarısız.");
+    } finally {
+      setApproving(false);
     }
   }
 
@@ -378,6 +439,66 @@ export default function PostDetailPage() {
               </div>
             )}
 
+            {/* Approval panel (admin) */}
+            {post.status === "PENDING_APPROVAL" && isAdmin && (
+              <div className="mt-4 space-y-3 rounded-xl border border-violet-500/30 bg-violet-950/20 p-4">
+                <p className="text-sm font-medium text-violet-200">Onay bekliyor</p>
+                {post.submittedForApprovalAt && (
+                  <p className="text-xs text-violet-300/70">
+                    Gönderildi: {formatDate(post.submittedForApprovalAt)}
+                  </p>
+                )}
+                {post.scheduledAt && (
+                  <p className="text-xs text-orange-300/80">
+                    İstenen zaman: {formatDate(post.scheduledAt)}
+                  </p>
+                )}
+                {!post.scheduledAt && (
+                  <div>
+                    <label htmlFor="approve-schedule" className="block text-xs text-zinc-500 mb-2">
+                      Planlama tarihi (isteğe bağlı)
+                    </label>
+                    <input
+                      id="approve-schedule"
+                      type="datetime-local"
+                      value={approveScheduleLocal}
+                      min={defaultScheduledLocal().slice(0, 16)}
+                      onChange={(e) => setApproveScheduleLocal(e.target.value)}
+                      className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2 text-sm text-zinc-100 [color-scheme:dark]"
+                    />
+                  </div>
+                )}
+                {approveError && (
+                  <p className="text-xs text-red-400">{approveError}</p>
+                )}
+                <div className="flex flex-col gap-2">
+                  <button
+                    onClick={() => handleApprove("publish")}
+                    disabled={approving}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:bg-zinc-700 text-white text-sm font-semibold transition-all"
+                  >
+                    {approving ? "İşleniyor…" : "Onayla ve Hemen Yayınla"}
+                  </button>
+                  <button
+                    onClick={() => handleApprove("schedule")}
+                    disabled={approving}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-orange-600 hover:bg-orange-500 disabled:bg-zinc-700 text-white text-sm font-semibold transition-all"
+                  >
+                    {approving ? "İşleniyor…" : "Onayla ve Zamanla"}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {post.status === "PENDING_APPROVAL" && !isAdmin && (
+              <p className="mt-4 text-xs text-violet-300/80 bg-violet-950/30 border border-violet-800/40 rounded-xl px-4 py-3">
+                Gönderiniz yönetici onayı bekliyor.
+                {post.submittedForApprovalAt && (
+                  <> Gönderim: {formatDate(post.submittedForApprovalAt)}</>
+                )}
+              </p>
+            )}
+
             {/* Re-publish button */}
             {(post.status === "FAILED" || post.status === "PARTIAL") && (
               <div className="mt-4">
@@ -451,8 +572,20 @@ export default function PostDetailPage() {
               </div>
               {post.scheduledAt && (
                 <div className="flex justify-between">
-                  <dt className="text-zinc-500">Zamanlandı</dt>
+                  <dt className="text-zinc-500">{post.status === "PENDING_APPROVAL" ? "İstenen zaman" : "Zamanlandı"}</dt>
                   <dd className="text-zinc-300">{formatDate(post.scheduledAt)}</dd>
+                </div>
+              )}
+              {post.submittedForApprovalAt && (
+                <div className="flex justify-between">
+                  <dt className="text-zinc-500">Onaya gönderildi</dt>
+                  <dd className="text-zinc-300">{formatDate(post.submittedForApprovalAt)}</dd>
+                </div>
+              )}
+              {post.approvedAt && (
+                <div className="flex justify-between">
+                  <dt className="text-zinc-500">Onaylandı</dt>
+                  <dd className="text-zinc-300">{formatDate(post.approvedAt)}</dd>
                 </div>
               )}
               <div className="flex justify-between">

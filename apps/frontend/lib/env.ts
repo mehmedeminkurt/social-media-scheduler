@@ -54,6 +54,14 @@ const serverEnvSchema = z.object({
     .positive()
     .max(100)
     .default(10),
+  ANTHROPIC_API_KEY: z
+    .string()
+    .min(1, "ANTHROPIC_API_KEY must not be empty when set.")
+    .optional(),
+  ANTHROPIC_MODEL: z
+    .string()
+    .min(1, "ANTHROPIC_MODEL must not be empty when set.")
+    .optional(),
 });
 
 function validateServerEnv() {
@@ -69,6 +77,8 @@ function validateServerEnv() {
     S3_PUBLIC_BASE_URL: process.env.S3_PUBLIC_BASE_URL,
     WORKER_POLL_INTERVAL_MS: process.env.WORKER_POLL_INTERVAL_MS,
     WORKER_BATCH_SIZE: process.env.WORKER_BATCH_SIZE,
+    ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
+    ANTHROPIC_MODEL: process.env.ANTHROPIC_MODEL,
   });
 
   if (!result.success) {

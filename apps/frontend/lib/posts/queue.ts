@@ -33,7 +33,14 @@ export async function enqueuePostForPublish(postId: string): Promise<boolean> {
   const result = await prisma.post.updateMany({
     where: {
       id: postId,
-      status: { notIn: [PostStatus.PUBLISHING, PostStatus.PUBLISHED] },
+      status: {
+        in: [
+          PostStatus.DRAFT,
+          PostStatus.SCHEDULED,
+          PostStatus.FAILED,
+          PostStatus.PARTIAL,
+        ],
+      },
     },
     data: {
       status: PostStatus.SCHEDULED,

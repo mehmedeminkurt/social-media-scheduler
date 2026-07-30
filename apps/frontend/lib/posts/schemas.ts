@@ -23,3 +23,10 @@ export const createPostSchema = z.object({
 
 export type CreatePostInput = z.infer<typeof createPostSchema>;
 
+export const approvePostSchema = z.object({
+  action: z.enum(["publish", "schedule"]),
+  scheduledAt: z.string().datetime({ offset: true }).optional().nullable(),
+});
+
+export type ApprovePostInput = z.infer<typeof approvePostSchema>;
+
