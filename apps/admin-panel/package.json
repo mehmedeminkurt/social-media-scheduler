@@ -8,11 +8,11 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint --max-warnings 0",
-    "check-types": "next typegen && tsc --noEmit"
+    "check-types": "tsc --noEmit"
   },
   "dependencies": {
     "@repo/ui": "*",
-    "next": "^9.3.3",
+    "next": "^16.2.10",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
   },

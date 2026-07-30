@@ -1,6 +1,7 @@
 {
   "name": "social-media-scheduler",
   "private": true,
+  "packageManager": "npm@11.16.0",
   "scripts": {
     "build": "turbo run build",
     "dev": "turbo run dev",
@@ -18,8 +19,8 @@
     "typescript": "5.9.2"
   },
   "engines": {
-    "node": ">=18",
-    "npm": ">=10"
+    "node": ">= 18",
+    "npm": ">= 10"
   },
   "workspaces": [
     "apps/*",
