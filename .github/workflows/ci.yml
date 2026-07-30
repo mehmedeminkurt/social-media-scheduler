@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master, develop]
+  pull_request:
+    branches: [main, master, develop]
+
+jobs:
+  lint-and-typecheck:
+    name: Lint & Type Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Verify hooks are wired up (documents the expected state; fails fast if broken)
+      - name: Verify husky hooksPath
+        run: |
+          HOOKS_PATH=$(git config core.hooksPath)
+          echo "core.hooksPath = $HOOKS_PATH"
+          if [ "$HOOKS_PATH" != ".husky" ]; then
+            echo "ERROR: core.hooksPath is '$HOOKS_PATH', expected '.husky'"
+            echo "Run: git config core.hooksPath .husky"
+            exit 1
+          fi
+
+      - name: Lint (all workspaces)
+        run: npm run lint
+
+      - name: Type check (all workspaces)
+        run: npm run check-types

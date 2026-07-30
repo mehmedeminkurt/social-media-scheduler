@@ -14,6 +14,21 @@ A monorepo for scheduling and posting content to social media platforms.
 npm install
 ```
 
+> **Git hook doğrulama** — `npm install` sırasında `prepare` scripti Husky'yi başlatır ve `core.hooksPath` otomatik olarak `.husky` olarak set edilir. Kurulum sonrası kontrol edin:
+> ```bash
+> git config core.hooksPath   # .husky döndürmeli
+> ```
+> Boş ya da farklı bir değer dönüyorsa manuel olarak çalıştırın:
+> ```bash
+> git config core.hooksPath .husky
+> ```
+>
+> **Bun kullanıyorsanız:** `bun install`, `prepare` script'ini çalıştırmaz. Hook'ları etkinleştirmek için ayrıca çalıştırın:
+> ```bash
+> bun run prepare
+> ```
+
+
 ### 2. Configure environment
 ```bash
 cd apps/frontend
