@@ -31,6 +31,15 @@ export function buildPublicUrl(key: string): string {
   return `${s3PublicBaseUrl}/${key}`;
 }
 
+/**
+ * True only for URLs served from our configured object storage. Used to gate any
+ * server-side fetch of a user-supplied URL (e.g. a brand-kit logo) so it can't be
+ * pointed at internal hosts / cloud metadata endpoints (SSRF).
+ */
+export function isStorageUrl(url: string): boolean {
+  return url.startsWith(`${s3PublicBaseUrl}/`);
+}
+
 export async function uploadMedia(
   buffer: Buffer,
   companyId: string,

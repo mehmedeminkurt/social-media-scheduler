@@ -21,16 +21,26 @@ interface ConnectedAccount {
   createdAt: string;
 }
 
+interface OverlayConfig {
+  template: "watermark" | "slim-bar";
+  position: string;
+  logoSize: number;
+  opacity: number;
+  margin: number;
+  showPill: boolean;
+  barHeight: number;
+}
+
 interface BrandKit {
   id: string;
   name: string;
   logoUrl: string | null;
   colors: Record<string, string>;
-  overlayConfig: Record<string, any>;
+  overlayConfig: OverlayConfig;
   createdAt: string;
 }
 
-const DEFAULT_OVERLAY = {
+const DEFAULT_OVERLAY: OverlayConfig = {
   template: "watermark",
   position: "bottom-right",
   logoSize: 56,
@@ -86,7 +96,7 @@ function SettingsContent() {
   const [bkLogoUrl, setBkLogoUrl] = useState("");
   const [bkLogoUploading, setBkLogoUploading] = useState(false);
   const [bkColors, setBkColors] = useState<Record<string, string>>(DEFAULT_COLORS);
-  const [bkOverlay, setBkOverlay] = useState<Record<string, any>>(DEFAULT_OVERLAY);
+  const [bkOverlay, setBkOverlay] = useState<OverlayConfig>(DEFAULT_OVERLAY);
   const [bkSaving, setBkSaving] = useState(false);
   const [bkError, setBkError] = useState("");
   const [bkPreviewUrl, setBkPreviewUrl] = useState<string | null>(null);
@@ -573,7 +583,7 @@ function SettingsContent() {
                       </div>
                       <div>
                         <p className="text-sm font-semibold text-zinc-100">{kit.name}</p>
-                        <p className="text-xs text-zinc-500 capitalize">{(kit.overlayConfig as any)?.template === "template2" ? "Köşe Rozeti" : "Renk Bandı"} · {kit.colors?.primary}</p>
+                        <p className="text-xs text-zinc-500 capitalize">{kit.overlayConfig?.template === "slim-bar" ? "İnce Şerit" : "Filigran"} · {kit.colors?.primary}</p>
                       </div>
                     </div>
                     <div className="flex gap-2">
@@ -654,10 +664,10 @@ function SettingsContent() {
                 <div>
                   <label className="block text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-3">Yerleşim Şablonu</label>
                   <div className="grid grid-cols-2 gap-3">
-                    {[
+                    {([
                       { val: "watermark", title: "Filigran", desc: "Logo köşede — ince, zarif" },
                       { val: "slim-bar",  title: "İnce Şerit", desc: "Altta/üstte şeffaf bant" },
-                    ].map(({ val, title, desc }) => (
+                    ] as const).map(({ val, title, desc }) => (
                       <button
                         key={val}
                         type="button"
@@ -779,7 +789,7 @@ function SettingsContent() {
                       <p className="text-xs text-zinc-500 mb-2">En-boy oranı:</p>
                       <select
                         value={previewAspect}
-                        onChange={(e) => setPreviewAspect(e.target.value as any)}
+                        onChange={(e) => setPreviewAspect(e.target.value as "1:1" | "4:5" | "9:16")}
                         className="bg-zinc-950 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-indigo-500 transition"
                       >
                         <option value="1:1">1:1 (Kare)</option>

@@ -1,5 +1,7 @@
 import sharp from "sharp";
 
+import { isStorageUrl } from "@/lib/storage/media";
+
 // ─── Public Types ─────────────────────────────────────────────────────────────
 
 export interface BrandKitData {
@@ -72,7 +74,6 @@ async function withOpacity(buf: Buffer, opacity: number): Promise<Buffer> {
 
   // Scale every alpha byte (index 3, 7, 11, …) by opacity
   for (let i = 3; i < data.length; i += 4) {
-    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
     data[i] = Math.round(data[i]! * opacity);
   }
 
@@ -167,13 +168,20 @@ export async function renderBrandedImage(
     targetH = meta.height ?? 1080;
   }
 
-  let baseBuffer = await basePipeline.png().toBuffer();
+  const baseBuffer = await basePipeline.png().toBuffer();
 
   // ── 3. Fetch and size logo ───────────────────────────────────────────────
   const composites: sharp.OverlayOptions[] = [];
 
   if (!brandKit.logoUrl) {
     // No logo — just return resized image as JPEG
+    return sharp(baseBuffer).jpeg({ quality: 92, mozjpeg: true }).toBuffer();
+  }
+
+  // SSRF guard: only ever fetch logos from our own storage. A logoUrl pointing
+  // anywhere else (internal host, cloud metadata endpoint) is ignored, not fetched.
+  if (!isStorageUrl(brandKit.logoUrl)) {
+    console.warn("Brand kit: logoUrl is not a storage URL, skipping overlay.");
     return sharp(baseBuffer).jpeg({ quality: 92, mozjpeg: true }).toBuffer();
   }
 
