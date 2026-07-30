@@ -8,14 +8,16 @@ export const brandKitSchema = z.object({
     secondary: z.string().regex(/^#[0-9A-Fa-f]{6}$/, "Geçersiz renk kodu (örnek: #ffffff)").optional().nullable(),
     background: z.string().regex(/^#[0-9A-Fa-f]{6}$/, "Geçersiz renk kodu (örnek: #ffffff)").optional().nullable(),
   }),
+  // Vocabulary must match the render engine (lib/branding/engine.ts) and the
+  // settings UI: template is watermark | slim-bar, with margin/showPill/barHeight.
   overlayConfig: z.object({
-    template: z.enum(["template1", "template2"]),
+    template: z.enum(["watermark", "slim-bar"]),
     position: z.enum(["top", "bottom", "top-left", "top-right", "bottom-left", "bottom-right"]),
-    barHeight: z.number().min(10).max(500).optional().nullable(),
     logoSize: z.number().min(10).max(500).optional().nullable(),
     opacity: z.number().min(0).max(1).optional().nullable(),
-    padding: z.number().min(0).max(300).optional().nullable(),
-    align: z.enum(["left", "center", "right"]).optional().nullable(),
+    margin: z.number().min(0).max(300).optional().nullable(),
+    showPill: z.boolean().optional().nullable(),
+    barHeight: z.number().min(10).max(500).optional().nullable(),
   }),
 });
 

@@ -1,9 +1,11 @@
+import { Prisma } from "@prisma/client";
 import { getServerSession } from "next-auth/next";
 
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { apiError, apiSuccess } from "@/lib/api-response-server";
 import { brandKitSchema } from "@/lib/branding/schemas";
 import { prisma } from "@/lib/prisma";
+import { isStorageUrl } from "@/lib/storage/media";
 import { requireCompanyAccess, TenantAccessError } from "@/lib/tenant";
 import { validateBody } from "@/lib/validate-request";
 
@@ -42,13 +44,17 @@ export async function PUT(
 
     const { name, logoUrl, colors, overlayConfig } = validation.data;
 
+    if (logoUrl && !isStorageUrl(logoUrl)) {
+      return apiError("Logo yalnızca yüklenen dosyalardan seçilebilir.", 400);
+    }
+
     const updated = await prisma.brandKit.update({
       where: { id },
       data: {
         name,
         logoUrl: logoUrl ?? existing.logoUrl,
-        colors: colors as any,
-        overlayConfig: overlayConfig as any,
+        colors: colors as Prisma.InputJsonValue,
+        overlayConfig: overlayConfig as Prisma.InputJsonValue,
       },
     });
 

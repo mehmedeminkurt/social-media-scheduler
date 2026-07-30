@@ -1,20 +1,15 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
-import { z } from "zod";
 
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { apiError } from "@/lib/api-response-server";
 import { renderBrandedImage, type BrandKitData } from "@/lib/branding/engine";
 import { prisma } from "@/lib/prisma";
+import { isStorageUrl } from "@/lib/storage/media";
 import { requireCompanyAccess, TenantAccessError } from "@/lib/tenant";
 
 const MAX_IMAGE_SIZE = 20 * 1024 * 1024; // 20 MB
 const ACCEPTED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
-
-const previewQuerySchema = z.object({
-  aspectRatio: z.enum(["1:1", "4:5", "9:16"]).optional().nullable(),
-  brandKitId: z.string().uuid().optional().nullable(),
-});
 
 export async function POST(req: NextRequest) {
   try {
@@ -73,6 +68,10 @@ export async function POST(req: NextRequest) {
       const colorsParam = formData.get("colors");
       const overlayConfigParam = formData.get("overlayConfig");
       const logoUrlParam = formData.get("logoUrl") as string | null;
+
+      if (logoUrlParam && !isStorageUrl(logoUrlParam)) {
+        return apiError("Logo yalnızca yüklenen dosyalardan seçilebilir.", 400);
+      }
 
       if (colorsParam && overlayConfigParam) {
         try {
